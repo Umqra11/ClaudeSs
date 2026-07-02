@@ -1,0 +1,317 @@
+/* ============================================================
+   KPSS Takip — tasarım sistemi
+   Tek kaynaklı palet: CSS değişkenleri.
+   Açık tema :root'ta, koyu tema prefers-color-scheme ile.
+   Vurgu: sakin derin teal (çam yeşili ailesi).
+   ============================================================ */
+
+:root {
+  /* Renkler — açık tema */
+  --bg: #f6f7f7;
+  --surface: #ffffff;
+  --surface-2: #eef1f0;
+  --text: #1b2422;
+  --text-muted: #66736f;
+  --border: #e2e7e5;
+
+  --accent: #0f766e;
+  --accent-soft: #e4f2f0;
+  --accent-contrast: #ffffff;
+
+  --danger: #b4574a;
+  --danger-soft: #f7ebe9;
+
+  /* Biçim */
+  --radius: 16px;
+  --radius-sm: 12px;
+  --radius-full: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+
+  --tabbar-height: 60px;
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+
+  --shadow-soft: 0 1px 2px rgba(20, 30, 28, 0.05),
+    0 4px 16px rgba(20, 30, 28, 0.06);
+
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #101413;
+    --surface: #181e1c;
+    --surface-2: #202826;
+    --text: #e8edec;
+    --text-muted: #8fa09b;
+    --border: #2a3330;
+
+    --accent: #2dd4bf;
+    --accent-soft: #17302c;
+    --accent-contrast: #06211e;
+
+    --danger: #e08a7d;
+    --danger-soft: #33211e;
+
+    --shadow-soft: none;
+  }
+}
+
+/* ---------- Taban ---------- */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100dvh;
+}
+
+#root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---------- Uygulama kabuğu ---------- */
+
+.app {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: 480px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.page {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: calc(var(--space-6) + env(safe-area-inset-top)) var(--space-5)
+    calc(var(--tabbar-height) + var(--space-6) + env(safe-area-inset-bottom));
+}
+
+.page-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ---------- Kronometre sayfası ---------- */
+
+.timer-page {
+  justify-content: space-between;
+  text-align: center;
+}
+
+.timer-display {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-4);
+}
+
+.timer-digits {
+  font-size: clamp(3.25rem, 17vw, 4.5rem);
+  font-weight: 200;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  color: var(--text);
+}
+
+.timer-state {
+  font-size: 0.9375rem;
+  color: var(--text-muted);
+}
+
+.timer-controls {
+  display: flex;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-5) 0;
+}
+
+.week-total {
+  display: inline-flex;
+  align-self: center;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+}
+
+.week-total strong {
+  color: var(--text);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Butonlar ---------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 48px;
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-full);
+  font-size: 1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: transform 0.12s ease, opacity 0.12s ease;
+}
+
+.btn:active {
+  transform: scale(0.97);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: var(--shadow-soft);
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-danger {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+
+.btn-wide {
+  width: 100%;
+}
+
+/* ---------- Odalar sayfası ---------- */
+
+.rooms-page {
+  gap: var(--space-6);
+}
+
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: var(--space-3);
+  padding: var(--space-6) 0;
+}
+
+.empty-state-icon {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  margin-bottom: var(--space-2);
+}
+
+.empty-state h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.empty-state p {
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+  max-width: 26ch;
+}
+
+.rooms-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+/* ---------- Alt sekme çubuğu ---------- */
+
+.tabbar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.tabbar-inner {
+  display: flex;
+  width: 100%;
+  max-width: 480px;
+  height: var(--tabbar-height);
+}
+
+.tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+}
+
+.tab svg {
+  width: 24px;
+  height: 24px;
+}
+
+.tab[aria-current='page'] {
+  color: var(--accent);
+}
