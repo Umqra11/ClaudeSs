@@ -129,6 +129,95 @@ button {
   text-align: center;
 }
 
+.mode-notice {
+  margin-top: var(--space-1);
+  text-align: center;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  opacity: 0.75;
+}
+
+/* ---------- Karşılama sayfası ---------- */
+
+.welcome-page {
+  justify-content: center;
+  gap: var(--space-7);
+  padding-bottom: calc(var(--space-7) + env(safe-area-inset-bottom));
+  max-width: 480px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.welcome-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: var(--space-3);
+}
+
+.welcome-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  box-shadow: var(--shadow-soft);
+  margin-bottom: var(--space-2);
+}
+
+.welcome-hero h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.welcome-hero p {
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+  max-width: 28ch;
+}
+
+.welcome-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.text-input {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 1.0625rem;
+  text-align: center;
+}
+
+.text-input::placeholder {
+  color: var(--text-muted);
+}
+
+.text-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn:disabled:active {
+  transform: none;
+}
+
 /* ---------- Kronometre sayfası ---------- */
 
 .timer-page {

@@ -1,8 +1,21 @@
+import { isLocalMode, type UserProfile } from '../services/db'
+
+interface TimerProps {
+  user: UserProfile
+}
+
 // Kronometre işlevi Faz 3'te bağlanacak; şimdilik görsel tasarım.
-export default function Timer() {
+export default function Timer({ user }: TimerProps) {
   return (
     <main className="page timer-page">
-      <h1 className="page-title">KPSS Takip</h1>
+      <header>
+        <h1 className="page-title">Merhaba, {user.name}</h1>
+        {isLocalMode && (
+          <p className="mode-notice">
+            Yerel mod — Firebase bağlanınca odalar aktif olur
+          </p>
+        )}
+      </header>
 
       <div className="timer-display">
         <div className="timer-digits">00:00:00</div>
