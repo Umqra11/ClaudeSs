@@ -1,9 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <rect width="128" height="128" rx="28" fill="#0f766e"/>
-  <g fill="none" stroke="#f0fdfa" stroke-width="7" stroke-linecap="round">
-    <circle cx="64" cy="72" r="34"/>
-    <path d="M64 72V50"/>
-    <path d="M52 22h24"/>
-    <path d="M64 22v10"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- KPSS Takip — kronometre; tek vurgu rengi (derin teal) -->
+  <rect width="512" height="512" rx="116" fill="#0f766e"/>
+  <g fill="none" stroke="#e7fbf6" stroke-linecap="round">
+    <!-- gövde -->
+    <circle cx="256" cy="292" r="138" stroke-width="30"/>
+    <!-- akrep: hafif açıyla iki kol -->
+    <path d="M256 292 L256 196" stroke-width="30"/>
+    <path d="M256 292 L316 330" stroke-width="30"/>
+    <!-- üst düğme -->
+    <path d="M210 74 h92" stroke-width="30"/>
+    <path d="M256 82 v40" stroke-width="30"/>
   </g>
+  <!-- merkez pim -->
+  <circle cx="256" cy="292" r="16" fill="#e7fbf6"/>
 </svg>

@@ -1,0 +1,55 @@
+rules_version = '2';
+
+// ============================================================
+// KPSS Takip — Firestore güvenlik kuralları
+//
+// Özet:
+//  - Yazma: herkes YALNIZCA kendi users/{uid} belgesini yazabilir.
+//  - Okuma: giriş yapmış (anonim) kullanıcılar okuyabilir; scoreboard
+//    diğer üyelerin belgelerini, katılma akışı da kod sorgusunu okur.
+//  - Odaya katılma: oda belgesinde yalnızca memberUids alanı, yalnızca
+//    kendi uid'ini EKLEYEREK değiştirilebilir (kimse çıkarılamaz,
+//    başka alan değiştirilemez).
+// ============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- Kullanıcı belgeleri ----
+    match /users/{uid} {
+      // Scoreboard: oda üyeleri birbirinin süresini görür.
+      // (Anonim auth zorunlu; herkese açık değil.)
+      allow read: if request.auth != null;
+
+      // Yalnızca kendi belgeni oluşturabilir/güncelleyebilirsin.
+      allow create, update: if request.auth != null
+        && request.auth.uid == uid;
+
+      allow delete: if false;
+    }
+
+    // ---- Oda belgeleri ----
+    match /rooms/{roomId} {
+      // Kod ile oda arama + oda bilgisi okuma (auth'lu herkese).
+      allow read: if request.auth != null;
+
+      // Oda kurma: sahibi sensin ve tek üye sensin.
+      allow create: if request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.memberUids == [request.auth.uid];
+
+      // Odaya katılma: yalnızca memberUids değişir, mevcut üyeler
+      // korunur ve eklenen tek uid seninkidir (arrayUnion etkisi).
+      allow update: if request.auth != null
+        && request.resource.data.diff(resource.data)
+             .affectedKeys().hasOnly(['memberUids'])
+        && request.resource.data.memberUids.toSet()
+             .hasAll(resource.data.memberUids.toSet())
+        && request.resource.data.memberUids.toSet()
+             .difference(resource.data.memberUids.toSet())
+             .hasOnly([request.auth.uid]);
+
+      allow delete: if false;
+    }
+  }
+}

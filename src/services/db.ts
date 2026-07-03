@@ -2,271 +2,26 @@
 // Veri katmanı soyutlaması
 //
 // Tek arayüz (Backend), iki uygulama:
-//   - FirebaseBackend: Anonymous Auth + Firestore users/{uid},
-//     rooms/{roomId} ve onSnapshot canlı dinleyicileri
-//   - LocalBackend:    Firebase yapılandırılmamışken localStorage
-//     tabanlı tek kullanıcılık "yerel mod" (oda kurulabilir,
-//     kullanıcı tek üye olur; UI Firebase olmadan test edilir)
+//   - FirebaseBackend (firebaseBackend.ts): Anonymous Auth +
+//     Firestore; YALNIZCA config doluysa DİNAMİK import ile
+//     yüklenir — yerel modda firebase chunk'ı ağa hiç inmez.
+//   - LocalBackend (bu dosya): Firebase yapılandırılmamışken
+//     localStorage tabanlı tek kullanıcılık "yerel mod".
 // ============================================================
 
-import {
-  arrayUnion,
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  onSnapshot,
-  query,
-  serverTimestamp,
-  setDoc,
-  Timestamp,
-  updateDoc,
-  where,
-} from 'firebase/firestore'
-import { onAuthStateChanged, signInAnonymously } from 'firebase/auth'
-import { firebaseAuth, firebaseDb } from '../firebase'
 import { isFirebaseConfigured } from '../firebase-config'
+import {
+  emptyProfile,
+  generateRoomCode,
+  ROOM_NOT_FOUND,
+  type Backend,
+  type Room,
+  type Unsubscribe,
+  type UserPatch,
+  type UserProfile,
+} from './shared'
 
-export interface UserProfile {
-  uid: string
-  name: string
-  weekId: string
-  weekTotalSec: number
-  isStudying: boolean
-  sessionStartedAt: number | null // epoch ms
-  sessionAccumulatedSec: number
-  roomIds: string[]
-}
-
-export interface Room {
-  id: string
-  name: string
-  code: string
-  ownerUid: string
-  memberUids: string[]
-  createdAt: number // epoch ms
-}
-
-export type UserPatch = Partial<Omit<UserProfile, 'uid'>>
-export type Unsubscribe = () => void
-
-export interface Backend {
-  readonly kind: 'firebase' | 'local'
-  /** Kalıcı oturumu çözer; kayıtlı kullanıcı yoksa null (Welcome gösterilir). */
-  resolveSession(): Promise<UserProfile | null>
-  /** İsimle ilk kaydı yapar ve profili döndürür. */
-  register(name: string): Promise<UserProfile>
-  /** Kullanıcı belgesini kısmi günceller. */
-  updateUser(uid: string, patch: UserPatch): Promise<void>
-  /** Oda kurar: 6 haneli paylaşım kodu üretilir, kullanıcı tek üye olur. */
-  createRoom(uid: string, name: string): Promise<Room>
-  /** Kodla odaya katılır; oda yoksa Türkçe hata fırlatır. */
-  joinRoom(uid: string, code: string): Promise<Room>
-  /** Kullanıcının üyesi olduğu odalar. */
-  listRooms(uid: string): Promise<Room[]>
-  /** Oda belgesini canlı dinler. */
-  subscribeRoom(roomId: string, cb: (room: Room | null) => void): Unsubscribe
-  /** Üye kullanıcı belgelerini canlı dinler (scoreboard). */
-  subscribeMembers(
-    memberUids: string[],
-    cb: (members: UserProfile[]) => void,
-  ): Unsubscribe
-}
-
-// Karışmayan karakterler: I, O, 0, 1 yok
-const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-const CODE_LENGTH = 6
-
-function generateRoomCode(): string {
-  const values = new Uint32Array(CODE_LENGTH)
-  crypto.getRandomValues(values)
-  let out = ''
-  for (let i = 0; i < CODE_LENGTH; i++) {
-    out += CODE_ALPHABET[values[i] % CODE_ALPHABET.length]
-  }
-  return out
-}
-
-function emptyProfile(uid: string, name: string): UserProfile {
-  return {
-    uid,
-    name,
-    weekId: '',
-    weekTotalSec: 0,
-    isStudying: false,
-    sessionStartedAt: null,
-    sessionAccumulatedSec: 0,
-    roomIds: [],
-  }
-}
-
-const ROOM_NOT_FOUND = 'Bu kodla bir oda bulunamadı'
-
-// ---------- Firebase ----------
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapUserDoc(uid: string, d: any): UserProfile {
-  return {
-    uid,
-    name: d.name ?? '',
-    weekId: d.weekId ?? '',
-    weekTotalSec: d.weekTotalSec ?? 0,
-    isStudying: d.isStudying ?? false,
-    sessionStartedAt:
-      d.sessionStartedAt instanceof Timestamp
-        ? d.sessionStartedAt.toMillis()
-        : null,
-    sessionAccumulatedSec: d.sessionAccumulatedSec ?? 0,
-    roomIds: d.roomIds ?? [],
-  }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function mapRoomDoc(id: string, d: any): Room {
-  return {
-    id,
-    name: d.name ?? '',
-    code: d.code ?? '',
-    ownerUid: d.ownerUid ?? '',
-    memberUids: d.memberUids ?? [],
-    createdAt: d.createdAt instanceof Timestamp ? d.createdAt.toMillis() : 0,
-  }
-}
-
-class FirebaseBackend implements Backend {
-  readonly kind = 'firebase' as const
-  private auth = firebaseAuth!
-  private db = firebaseDb!
-
-  /** Kalıcı (IndexedDB) anonim oturum varsa uid'ini bekleyip döndürür. */
-  private currentUid(): Promise<string | null> {
-    if (this.auth.currentUser) return Promise.resolve(this.auth.currentUser.uid)
-    return new Promise((resolve) => {
-      const unsub = onAuthStateChanged(this.auth, (user) => {
-        unsub()
-        resolve(user?.uid ?? null)
-      })
-    })
-  }
-
-  async resolveSession(): Promise<UserProfile | null> {
-    const uid = await this.currentUid()
-    if (!uid) return null
-    const snap = await getDoc(doc(this.db, 'users', uid))
-    if (!snap.exists()) return null
-    const d = snap.data()
-    if (!d.name) return null
-    return mapUserDoc(uid, d)
-  }
-
-  async register(name: string): Promise<UserProfile> {
-    const uid =
-      (await this.currentUid()) ??
-      (await signInAnonymously(this.auth)).user.uid
-    await setDoc(doc(this.db, 'users', uid), {
-      name,
-      weekId: '',
-      weekTotalSec: 0,
-      isStudying: false,
-      sessionStartedAt: null,
-      sessionAccumulatedSec: 0,
-      roomIds: [],
-      updatedAt: serverTimestamp(),
-    })
-    return emptyProfile(uid, name)
-  }
-
-  async updateUser(uid: string, patch: UserPatch): Promise<void> {
-    const data: Record<string, unknown> = {
-      ...patch,
-      updatedAt: serverTimestamp(),
-    }
-    if ('sessionStartedAt' in patch) {
-      data.sessionStartedAt =
-        patch.sessionStartedAt == null
-          ? null
-          : Timestamp.fromMillis(patch.sessionStartedAt)
-    }
-    await updateDoc(doc(this.db, 'users', uid), data)
-  }
-
-  async createRoom(uid: string, name: string): Promise<Room> {
-    const roomRef = doc(collection(this.db, 'rooms'))
-    const code = generateRoomCode()
-    await setDoc(roomRef, {
-      name,
-      code,
-      ownerUid: uid,
-      memberUids: [uid],
-      createdAt: serverTimestamp(),
-    })
-    await updateDoc(doc(this.db, 'users', uid), {
-      roomIds: arrayUnion(roomRef.id),
-      updatedAt: serverTimestamp(),
-    })
-    return {
-      id: roomRef.id,
-      name,
-      code,
-      ownerUid: uid,
-      memberUids: [uid],
-      createdAt: Date.now(),
-    }
-  }
-
-  async joinRoom(uid: string, code: string): Promise<Room> {
-    const q = query(
-      collection(this.db, 'rooms'),
-      where('code', '==', code.toUpperCase()),
-    )
-    const snaps = await getDocs(q)
-    if (snaps.empty) throw new Error(ROOM_NOT_FOUND)
-    const snap = snaps.docs[0]
-    await updateDoc(snap.ref, { memberUids: arrayUnion(uid) })
-    await updateDoc(doc(this.db, 'users', uid), {
-      roomIds: arrayUnion(snap.id),
-      updatedAt: serverTimestamp(),
-    })
-    const room = mapRoomDoc(snap.id, snap.data())
-    if (!room.memberUids.includes(uid)) room.memberUids.push(uid)
-    return room
-  }
-
-  async listRooms(uid: string): Promise<Room[]> {
-    const q = query(
-      collection(this.db, 'rooms'),
-      where('memberUids', 'array-contains', uid),
-    )
-    const snaps = await getDocs(q)
-    return snaps.docs
-      .map((s) => mapRoomDoc(s.id, s.data()))
-      .sort((a, b) => a.createdAt - b.createdAt)
-  }
-
-  subscribeRoom(roomId: string, cb: (room: Room | null) => void): Unsubscribe {
-    return onSnapshot(doc(this.db, 'rooms', roomId), (snap) => {
-      cb(snap.exists() ? mapRoomDoc(snap.id, snap.data()) : null)
-    })
-  }
-
-  subscribeMembers(
-    memberUids: string[],
-    cb: (members: UserProfile[]) => void,
-  ): Unsubscribe {
-    const found = new Map<string, UserProfile>()
-    const emit = () => {
-      cb(memberUids.filter((u) => found.has(u)).map((u) => found.get(u)!))
-    }
-    const unsubs = memberUids.map((uid) =>
-      onSnapshot(doc(this.db, 'users', uid), (snap) => {
-        if (snap.exists()) found.set(uid, mapUserDoc(uid, snap.data()))
-        else found.delete(uid)
-        emit()
-      }),
-    )
-    return () => unsubs.forEach((unsub) => unsub())
-  }
-}
+export type { Backend, Room, Unsubscribe, UserPatch, UserProfile } from './shared'
 
 // ---------- Yerel mod ----------
 
@@ -383,10 +138,54 @@ class LocalBackend implements Backend {
   }
 }
 
-// ---------- Aktif backend ----------
+// ---------- Aktif backend (facade) ----------
 
-export const db: Backend = isFirebaseConfigured()
-  ? new FirebaseBackend()
-  : new LocalBackend()
+export const isLocalMode = !isFirebaseConfigured()
 
-export const isLocalMode = db.kind === 'local'
+const localBackend = new LocalBackend()
+let firebasePromise: Promise<Backend> | null = null
+
+function getBackend(): Promise<Backend> {
+  if (isLocalMode) return Promise.resolve(localBackend)
+  firebasePromise ??= import('./firebaseBackend').then((m) =>
+    m.createFirebaseBackend(),
+  )
+  return firebasePromise
+}
+
+/**
+ * Dış dünyaya tek nesne: metodlar gerçek backend'i (gerekirse dinamik
+ * yükleyip) çağırır. subscribe* çağrıları senkron bir unsubscribe
+ * döndürür; backend hazır olmadan iptal edilirse dinleyici hiç kurulmaz.
+ */
+export const db: Backend = {
+  kind: isLocalMode ? 'local' : 'firebase',
+  resolveSession: () => getBackend().then((b) => b.resolveSession()),
+  register: (name) => getBackend().then((b) => b.register(name)),
+  updateUser: (uid, patch) => getBackend().then((b) => b.updateUser(uid, patch)),
+  createRoom: (uid, name) => getBackend().then((b) => b.createRoom(uid, name)),
+  joinRoom: (uid, code) => getBackend().then((b) => b.joinRoom(uid, code)),
+  listRooms: (uid) => getBackend().then((b) => b.listRooms(uid)),
+  subscribeRoom(roomId, cb) {
+    let unsub: Unsubscribe | null = null
+    let cancelled = false
+    void getBackend().then((b) => {
+      if (!cancelled) unsub = b.subscribeRoom(roomId, cb)
+    })
+    return () => {
+      cancelled = true
+      unsub?.()
+    }
+  },
+  subscribeMembers(memberUids, cb) {
+    let unsub: Unsubscribe | null = null
+    let cancelled = false
+    void getBackend().then((b) => {
+      if (!cancelled) unsub = b.subscribeMembers(memberUids, cb)
+    })
+    return () => {
+      cancelled = true
+      unsub?.()
+    }
+  },
+}
