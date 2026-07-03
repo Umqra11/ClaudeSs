@@ -35,12 +35,12 @@ function pick(envKey: string, manual: string): string {
 }
 
 export const firebaseConfig = {
-  apiKey: pick('VITE_FIREBASE_API_KEY', 'BURAYA_YAPISTIR'),
-  authDomain: pick('VITE_FIREBASE_AUTH_DOMAIN', 'BURAYA_YAPISTIR'),
-  projectId: pick('VITE_FIREBASE_PROJECT_ID', 'BURAYA_YAPISTIR'),
-  storageBucket: pick('VITE_FIREBASE_STORAGE_BUCKET', 'BURAYA_YAPISTIR'),
-  messagingSenderId: pick('VITE_FIREBASE_MESSAGING_SENDER_ID', 'BURAYA_YAPISTIR'),
-  appId: pick('VITE_FIREBASE_APP_ID', 'BURAYA_YAPISTIR'),
+  apiKey: pick('VITE_FIREBASE_API_KEY', 'AIzaSyBAxMJDvTEr-S7F5BswOaq5FrQhOZ036Tw'),
+  authDomain: pick('VITE_FIREBASE_AUTH_DOMAIN', 'kpss-love.firebaseapp.com'),
+  projectId: pick('VITE_FIREBASE_PROJECT_ID', 'kpss-love'),
+  storageBucket: pick('VITE_FIREBASE_STORAGE_BUCKET', 'kpss-love.firebasestorage.app'),
+  messagingSenderId: pick('VITE_FIREBASE_MESSAGING_SENDER_ID', '665449572529'),
+  appId: pick('VITE_FIREBASE_APP_ID', '1:665449572529:web:fb1441fdc8bdfaa5b29a90'),
 }
 
 /** Config'in gerçek değerlerle doldurulup doldurulmadığını söyler. */
