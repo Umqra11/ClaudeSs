@@ -11,22 +11,35 @@
 
 import { isFirebaseConfigured } from '../firebase-config'
 import {
+  ALREADY_IN_ROOM,
   emptyProfile,
   generateRoomCode,
   ROOM_NOT_FOUND,
+  REACTION_MAX_LEN,
+  REACTION_TTL_MS,
   type Backend,
+  type Reaction,
   type Room,
   type Unsubscribe,
   type UserPatch,
   type UserProfile,
 } from './shared'
 
-export type { Backend, Room, Unsubscribe, UserPatch, UserProfile } from './shared'
+export type {
+  Backend,
+  Reaction,
+  Room,
+  Unsubscribe,
+  UserPatch,
+  UserProfile,
+} from './shared'
+export { ALREADY_IN_ROOM, REACTION_MAX_LEN, REACTION_TTL_MS } from './shared'
 
 // ---------- Yerel mod ----------
 
 const LOCAL_KEY = 'kpss.user'
 const LOCAL_ROOMS_KEY = 'kpss.rooms'
+const LOCAL_REACTIONS_KEY = 'kpss.reactions'
 
 function localUid(): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
@@ -42,6 +55,7 @@ class LocalBackend implements Backend {
   // kendi sekmesinde tetiklenmediği için elle yayınlanır).
   private memberListeners = new Set<() => void>()
   private roomListeners = new Set<() => void>()
+  private reactionListeners = new Set<() => void>()
 
   private readRooms(): Room[] {
     try {
@@ -82,7 +96,15 @@ class LocalBackend implements Backend {
     this.memberListeners.forEach((emit) => emit())
   }
 
+  /** Tek oda kuralı: kullanıcı zaten bir odadaysa hata. */
+  private async assertNotInRoom(uid: string): Promise<void> {
+    if ((await this.listRooms(uid)).length > 0) {
+      throw new Error(ALREADY_IN_ROOM)
+    }
+  }
+
   async createRoom(uid: string, name: string): Promise<Room> {
+    await this.assertNotInRoom(uid)
     const room: Room = {
       id: `room-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
       name,
@@ -100,6 +122,7 @@ class LocalBackend implements Backend {
   }
 
   async joinRoom(uid: string, code: string): Promise<Room> {
+    await this.assertNotInRoom(uid)
     const room = this.readRooms().find((r) => r.code === code.toUpperCase())
     // Yerel modda yalnızca bu cihazda kurulan odalar bulunabilir.
     if (!room) throw new Error(ROOM_NOT_FOUND)
@@ -155,6 +178,54 @@ class LocalBackend implements Backend {
     this.memberListeners.add(emit)
     return () => this.memberListeners.delete(emit)
   }
+
+  private readReactions(): Reaction[] {
+    try {
+      const raw = localStorage.getItem(LOCAL_REACTIONS_KEY)
+      const list = raw ? (JSON.parse(raw) as Reaction[]) : []
+      // Süresi geçenler okurken ayıklanır
+      return list.filter((r) => r.expireAt > Date.now())
+    } catch {
+      return []
+    }
+  }
+
+  async sendReaction(
+    roomId: string,
+    fromUid: string,
+    fromName: string,
+    toUid: string,
+    text: string,
+  ): Promise<void> {
+    const trimmed = text.trim().slice(0, REACTION_MAX_LEN)
+    if (!trimmed) return
+    const now = Date.now()
+    const reaction: Reaction = {
+      id: `re-${now.toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
+      roomId,
+      fromUid,
+      fromName,
+      toUid,
+      text: trimmed,
+      createdAt: now,
+      expireAt: now + REACTION_TTL_MS,
+    }
+    localStorage.setItem(
+      LOCAL_REACTIONS_KEY,
+      JSON.stringify([...this.readReactions(), reaction]),
+    )
+    this.reactionListeners.forEach((emit) => emit())
+  }
+
+  subscribeReactions(
+    roomId: string,
+    cb: (reactions: Reaction[]) => void,
+  ): Unsubscribe {
+    const emit = () => cb(this.readReactions().filter((r) => r.roomId === roomId))
+    emit()
+    this.reactionListeners.add(emit)
+    return () => this.reactionListeners.delete(emit)
+  }
 }
 
 // ---------- Aktif backend (facade) ----------
@@ -202,6 +273,19 @@ export const db: Backend = {
     let cancelled = false
     void getBackend().then((b) => {
       if (!cancelled) unsub = b.subscribeMembers(memberUids, cb)
+    })
+    return () => {
+      cancelled = true
+      unsub?.()
+    }
+  },
+  sendReaction: (roomId, fromUid, fromName, toUid, text) =>
+    getBackend().then((b) => b.sendReaction(roomId, fromUid, fromName, toUid, text)),
+  subscribeReactions(roomId, cb) {
+    let unsub: Unsubscribe | null = null
+    let cancelled = false
+    void getBackend().then((b) => {
+      if (!cancelled) unsub = b.subscribeReactions(roomId, cb)
     })
     return () => {
       cancelled = true

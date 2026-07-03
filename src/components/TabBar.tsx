@@ -1,4 +1,4 @@
-export type Page = 'timer' | 'rooms'
+export type Page = 'timer' | 'rooms' | 'profile'
 
 interface TabBarProps {
   active: Page
@@ -24,6 +24,15 @@ function RoomsIcon() {
       <path d="M3.5 19.5c0-3 2.5-5 5.5-5s5.5 2 5.5 5" />
       <circle cx="16.5" cy="10" r="2.5" />
       <path d="M17.5 14.7c1.8.5 3 1.9 3 3.8" />
+    </svg>
+  )
+}
+
+function ProfileIcon() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <circle cx="12" cy="8.5" r="4" />
+      <path d="M4.5 20c0-3.6 3.3-6 7.5-6s7.5 2.4 7.5 6" />
     </svg>
   )
 }
@@ -62,6 +71,15 @@ export default function TabBar({ active, onChange, inRoom = false }: TabBarProps
         >
           {inRoom ? <TrophyIcon /> : <RoomsIcon />}
           {inRoom ? 'Liderlik' : 'Odalar'}
+        </button>
+        <button
+          type="button"
+          className="tab"
+          aria-current={active === 'profile' ? 'page' : undefined}
+          onClick={() => onChange('profile')}
+        >
+          <ProfileIcon />
+          Profil
         </button>
       </div>
     </nav>

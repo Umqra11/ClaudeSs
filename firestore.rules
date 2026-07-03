@@ -53,5 +53,23 @@ service cloud.firestore {
 
       allow delete: if false;
     }
+
+    // ---- Tepki/mesaj belgeleri (6 saat yaşar) ----
+    match /reactions/{reactionId} {
+      // Oda üyeleri tepkileri okur (auth'lu herkese; odalar zaten kodla gizli).
+      allow read: if request.auth != null;
+
+      // Yalnızca kendi adına, ≤50 karakter, en fazla ~7 saatlik ömürle.
+      allow create: if request.auth != null
+        && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 50
+        && request.resource.data.expireAt is timestamp
+        && request.resource.data.expireAt > request.time
+        && request.resource.data.expireAt < request.time + duration.value(7, 'h');
+
+      allow update, delete: if false;
+    }
   }
 }

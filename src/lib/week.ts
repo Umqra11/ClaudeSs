@@ -90,6 +90,15 @@ export function getWeekId(date: Date = new Date()): string {
   return `${day.getUTCFullYear()}-${pad(day.getUTCMonth() + 1)}-${pad(day.getUTCDate())}`
 }
 
+/**
+ * Gün anahtarı: verilen anın Istanbul duvar saatine göre tarihi,
+ * "2026-07-03" biçiminde (günlük çalışma geçmişi için).
+ */
+export function getDayId(date: Date = new Date()): string {
+  const w = istanbulWall(date)
+  return `${w.y}-${pad(w.m)}-${pad(w.d)}`
+}
+
 /** weekId'nin başlangıç anı (o Salı 00:00 Istanbul) — UTC epoch ms. */
 export function weekStartMs(weekId: string): number {
   const [y, m, d] = weekId.split('-').map(Number)

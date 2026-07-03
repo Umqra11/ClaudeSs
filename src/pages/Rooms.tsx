@@ -1,12 +1,15 @@
 import { useState, type FormEvent } from 'react'
 import { db, type Room, type UserProfile } from '../services/db'
-import { useRooms } from '../hooks/useRoom'
+
+// Tek oda modeli: bu ekran yalnızca ODASI OLMAYAN kullanıcıya görünür.
+// Oda kurulunca/katılınca onChanged() çağrılır; App oda listesini
+// tazeleyip doğrudan liderlik tablosunu (Scoreboard) gösterir.
 
 type View = 'list' | 'create' | 'created' | 'join'
 
 interface RoomsProps {
   user: UserProfile
-  onOpenRoom: (roomId: string) => void
+  onChanged: () => void
 }
 
 function PeopleIcon({ size = 28 }: { size?: number }) {
@@ -29,8 +32,7 @@ function PeopleIcon({ size = 28 }: { size?: number }) {
   )
 }
 
-export default function Rooms({ user, onOpenRoom }: RoomsProps) {
-  const { rooms, refresh } = useRooms(user.uid)
+export default function Rooms({ user, onChanged }: RoomsProps) {
   const [view, setView] = useState<View>('list')
   const [createdRoom, setCreatedRoom] = useState<Room | null>(null)
   const [roomName, setRoomName] = useState('')
@@ -44,14 +46,14 @@ export default function Rooms({ user, onOpenRoom }: RoomsProps) {
     const name = roomName.trim().slice(0, 40)
     if (!name || busy) return
     setBusy(true)
+    setError('')
     try {
       const room = await db.createRoom(user.uid, name)
       setCreatedRoom(room)
       setRoomName('')
       setView('created')
-      refresh()
-    } catch {
-      setError('Oda kurulamadı, tekrar dene')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Oda kurulamadı, tekrar dene')
     } finally {
       setBusy(false)
     }
@@ -64,10 +66,9 @@ export default function Rooms({ user, onOpenRoom }: RoomsProps) {
     setBusy(true)
     setError('')
     try {
-      const room = await db.joinRoom(user.uid, code)
+      await db.joinRoom(user.uid, code)
       setJoinCode('')
-      refresh()
-      onOpenRoom(room.id)
+      onChanged() // App taze listeyi çekip Scoreboard'u açar
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bir şeyler ters gitti')
     } finally {
@@ -154,7 +155,7 @@ export default function Rooms({ user, onOpenRoom }: RoomsProps) {
           <button
             type="button"
             className="btn btn-secondary btn-wide"
-            onClick={() => onOpenRoom(createdRoom.id)}
+            onClick={onChanged}
           >
             Odaya Git
           </button>
@@ -201,54 +202,21 @@ export default function Rooms({ user, onOpenRoom }: RoomsProps) {
     )
   }
 
-  // ---- Liste / boş durum ----
+  // ---- Boş durum: henüz odası yok ----
   return (
     <main className="page rooms-page">
       <h1 className="page-title">Odalar</h1>
 
-      {rooms && rooms.length > 0 ? (
-        <div className="room-list">
-          {rooms.map((room) => (
-            <button
-              key={room.id}
-              type="button"
-              className="room-card"
-              onClick={() => onOpenRoom(room.id)}
-            >
-              <span className="room-card-icon">
-                <PeopleIcon size={22} />
-              </span>
-              <span className="room-card-info">
-                <span className="room-card-name">{room.name}</span>
-                <span className="room-card-meta">
-                  {room.memberUids.length} üye
-                </span>
-              </span>
-              <svg
-                className="room-card-chevron"
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                aria-hidden="true"
-              >
-                <path d="m9 6 6 6-6 6" />
-              </svg>
-            </button>
-          ))}
+      <div className="empty-state">
+        <div className="empty-state-icon">
+          <PeopleIcon />
         </div>
-      ) : (
-        <div className="empty-state">
-          <div className="empty-state-icon">
-            <PeopleIcon />
-          </div>
-          <h2>Henüz bir odan yok</h2>
-          <p>Bir oda kur, kodu arkadaşlarınla paylaş ve birlikte çalışın.</p>
-        </div>
-      )}
+        <h2>Henüz bir odan yok</h2>
+        <p>
+          Bir oda kur ya da koduyla arkadaşının odasına katıl. Aynı anda tek
+          odada olabilirsin.
+        </p>
+      </div>
 
       <div className="rooms-actions">
         <button

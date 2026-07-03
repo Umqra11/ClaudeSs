@@ -2,6 +2,7 @@
 // (bkz. db.ts). Böylece yerel modda firebase chunk'ı ağa hiç inmez.
 
 import {
+  addDoc,
   arrayRemove,
   arrayUnion,
   collection,
@@ -19,10 +20,14 @@ import {
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth'
 import { firebaseAuth, firebaseDb } from '../firebase'
 import {
+  ALREADY_IN_ROOM,
   emptyProfile,
   generateRoomCode,
   ROOM_NOT_FOUND,
+  REACTION_MAX_LEN,
+  REACTION_TTL_MS,
   type Backend,
+  type Reaction,
   type Room,
   type Unsubscribe,
   type UserPatch,
@@ -43,6 +48,8 @@ function mapUserDoc(uid: string, d: any): UserProfile {
         : null,
     sessionAccumulatedSec: d.sessionAccumulatedSec ?? 0,
     roomIds: d.roomIds ?? [],
+    days: d.days ?? {},
+    allTimeSec: d.allTimeSec ?? 0,
   }
 }
 
@@ -96,6 +103,8 @@ class FirebaseBackend implements Backend {
       sessionStartedAt: null,
       sessionAccumulatedSec: 0,
       roomIds: [],
+      days: {},
+      allTimeSec: 0,
       updatedAt: serverTimestamp(),
     })
     return emptyProfile(uid, name)
@@ -115,7 +124,15 @@ class FirebaseBackend implements Backend {
     await updateDoc(doc(this.db, 'users', uid), data)
   }
 
+  /** Tek oda kuralı: kullanıcı zaten bir odadaysa hata. */
+  private async assertNotInRoom(uid: string): Promise<void> {
+    if ((await this.listRooms(uid)).length > 0) {
+      throw new Error(ALREADY_IN_ROOM)
+    }
+  }
+
   async createRoom(uid: string, name: string): Promise<Room> {
+    await this.assertNotInRoom(uid)
     const roomRef = doc(collection(this.db, 'rooms'))
     const code = generateRoomCode()
     await setDoc(roomRef, {
@@ -140,6 +157,7 @@ class FirebaseBackend implements Backend {
   }
 
   async joinRoom(uid: string, code: string): Promise<Room> {
+    await this.assertNotInRoom(uid)
     const q = query(
       collection(this.db, 'rooms'),
       where('code', '==', code.toUpperCase()),
@@ -201,6 +219,54 @@ class FirebaseBackend implements Backend {
       }),
     )
     return () => unsubs.forEach((unsub) => unsub())
+  }
+
+  async sendReaction(
+    roomId: string,
+    fromUid: string,
+    fromName: string,
+    toUid: string,
+    text: string,
+  ): Promise<void> {
+    const trimmed = text.trim().slice(0, REACTION_MAX_LEN)
+    if (!trimmed) return
+    await addDoc(collection(this.db, 'reactions'), {
+      roomId,
+      fromUid,
+      fromName,
+      toUid,
+      text: trimmed,
+      createdAt: serverTimestamp(),
+      expireAt: Timestamp.fromMillis(Date.now() + REACTION_TTL_MS),
+    })
+  }
+
+  subscribeReactions(
+    roomId: string,
+    cb: (reactions: Reaction[]) => void,
+  ): Unsubscribe {
+    const q = query(
+      collection(this.db, 'reactions'),
+      where('roomId', '==', roomId),
+    )
+    return onSnapshot(q, (snaps) => {
+      const list: Reaction[] = snaps.docs.map((s) => {
+        const d = s.data()
+        return {
+          id: s.id,
+          roomId: d.roomId ?? '',
+          fromUid: d.fromUid ?? '',
+          fromName: d.fromName ?? '',
+          toUid: d.toUid ?? '',
+          text: d.text ?? '',
+          createdAt:
+            d.createdAt instanceof Timestamp ? d.createdAt.toMillis() : 0,
+          expireAt:
+            d.expireAt instanceof Timestamp ? d.expireAt.toMillis() : 0,
+        }
+      })
+      cb(list.sort((a, b) => a.createdAt - b.createdAt))
+    })
   }
 }
 

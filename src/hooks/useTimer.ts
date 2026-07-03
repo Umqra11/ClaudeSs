@@ -15,8 +15,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { db, type UserProfile } from '../services/db'
-import { getWeekId, weekStartMs } from '../lib/week'
+import { getDayId, getWeekId, weekStartMs } from '../lib/week'
 import { formatClock } from '../lib/format'
+import { recordSession } from '../lib/stats'
 import {
   clearStudyNotification,
   ensureStudyPermission,
@@ -289,11 +290,31 @@ export function useTimer(user: UserProfile) {
       weekId: weekIdNow,
       totalSec: base + runningCurrentSec + accumCurrentSec,
     }
+
+    // Günlük geçmiş + tüm zamanlar: seansın TAM süresi (hafta sınırında
+    // düşen kısım dahil) bittiği güne yazılır.
+    const fullRunningSec =
+      prev.status === 'running' && prev.startedAt
+        ? Math.max(0, (now - prev.startedAt) / 1000)
+        : 0
+    const sessionSec = Math.round(prev.accumulatedSec + fullRunningSec)
+    const stats = recordSession(user, getDayId(new Date(now)), sessionSec)
+
     setWeek(w)
     setState(IDLE)
-    syncBackend(IDLE, w)
+    db.updateUser(user.uid, {
+      isStudying: false,
+      sessionStartedAt: null,
+      sessionAccumulatedSec: 0,
+      weekId: w.weekId,
+      weekTotalSec: Math.round(w.totalSec),
+      days: stats.days,
+      allTimeSec: Math.round(stats.allTimeSec),
+    }).catch(() => {
+      /* çevrimdışı vb. — localStorage zaten güncel */
+    })
     void clearStudyNotification()
-  }, [setWeek, syncBackend])
+  }, [setWeek, user])
 
   // Görünen değerler — her render'da zaman damgasından hesaplanır
   const now = Date.now()
