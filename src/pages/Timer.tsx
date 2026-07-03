@@ -1,11 +1,21 @@
 import { isLocalMode, type UserProfile } from '../services/db'
+import { useTimer } from '../hooks/useTimer'
+import { formatClock, formatWeekTotal } from '../lib/format'
 
 interface TimerProps {
   user: UserProfile
 }
 
-// Kronometre işlevi Faz 3'te bağlanacak; şimdilik görsel tasarım.
+const STATE_LABELS: Record<string, string> = {
+  idle: 'Hazır',
+  running: 'Çalışıyorsun',
+  paused: 'Duraklatıldı',
+}
+
 export default function Timer({ user }: TimerProps) {
+  const { status, elapsedSec, weekWithActiveSec, start, pause, resume, stop } =
+    useTimer(user)
+
   return (
     <main className="page timer-page">
       <header>
@@ -18,25 +28,47 @@ export default function Timer({ user }: TimerProps) {
       </header>
 
       <div className="timer-display">
-        <div className="timer-digits">00:00:00</div>
-        <div className="timer-state">Hazır</div>
+        <div className="timer-digits">{formatClock(elapsedSec)}</div>
+        <div className="timer-state">
+          {status === 'running' && <span className="pulse-dot" aria-hidden="true" />}
+          {STATE_LABELS[status]}
+        </div>
       </div>
 
       <div className="timer-controls">
-        <button type="button" className="btn btn-primary">
-          Başlat
-        </button>
-        <button type="button" className="btn btn-secondary">
-          Duraklat
-        </button>
-        <button type="button" className="btn btn-danger">
-          Durdur
-        </button>
+        {status === 'idle' && (
+          <button type="button" className="btn btn-primary" onClick={start}>
+            Başlat
+          </button>
+        )}
+        {status === 'running' && (
+          <>
+            <button type="button" className="btn btn-secondary" onClick={pause}>
+              Duraklat
+            </button>
+            <button type="button" className="btn btn-danger" onClick={stop}>
+              Durdur
+            </button>
+          </>
+        )}
+        {status === 'paused' && (
+          <>
+            <button type="button" className="btn btn-primary" onClick={resume}>
+              Devam
+            </button>
+            <button type="button" className="btn btn-danger" onClick={stop}>
+              Durdur
+            </button>
+          </>
+        )}
       </div>
 
-      <div className="week-total">
-        Bu hafta: <strong>0dk</strong>
-      </div>
+      <footer className="timer-footer">
+        <div className="week-total">
+          Bu hafta: <strong>{formatWeekTotal(weekWithActiveSec)}</strong>
+        </div>
+        <p className="reset-note">Salı 00:00'da sıfırlanır</p>
+      </footer>
     </main>
   )
 }
