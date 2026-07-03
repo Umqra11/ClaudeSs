@@ -97,6 +97,57 @@ kurup kodu paylaşırsın — hepsi bu.
 
 ---
 
+## Alternatif: Vercel ile yayınlama
+
+Firebase Hosting yerine (veya ona ek olarak) uygulamayı **Vercel**'de de
+yayınlayabilirsin. Firebase yine gerekli — Vercel yalnızca web sayfasını
+barındırır; giriş ve veriler yine Firebase üzerinden çalışır. Yani önce
+yukarıdaki **1–4. adımları** (Firebase projesi, Anonymous Auth, Firestore,
+anahtarlar) tamamlaman gerekir.
+
+**En kolay yol — GitHub üzerinden (kod yazmadan):**
+
+1. [vercel.com](https://vercel.com) adresine GitHub hesabınla giriş yap.
+2. **Add New → Project** de ve bu depoyu (`ClaudeSs`) içe aktar.
+   Vercel Vite'ı otomatik tanır; Build/Output ayarlarına dokunma
+   (`vercel.json` zaten hazır).
+3. Kurulum ekranında **Environment Variables** bölümüne Firebase
+   anahtarlarını ekle (adları birebir şöyle olmalı):
+
+   | Ad | Değer (Firebase config'inden) |
+   |----|-------------------------------|
+   | `VITE_FIREBASE_API_KEY` | `apiKey` |
+   | `VITE_FIREBASE_AUTH_DOMAIN` | `authDomain` |
+   | `VITE_FIREBASE_PROJECT_ID` | `projectId` |
+   | `VITE_FIREBASE_STORAGE_BUCKET` | `storageBucket` |
+   | `VITE_FIREBASE_MESSAGING_SENDER_ID` | `messagingSenderId` |
+   | `VITE_FIREBASE_APP_ID` | `appId` |
+
+   > Bu sayede anahtarları koda yazıp depoya göndermene gerek kalmaz.
+   > (İstersen yine de `src/firebase-config.ts` içine elle yazabilirsin;
+   > ortam değişkeni varsa o öncelikli olur.)
+4. **Deploy** de. Bitince `https://kpss-takip.vercel.app` gibi bir link çıkar.
+
+**Komut satırından (isteğe bağlı):**
+
+```bash
+npm install
+npx vercel            # ilk kez: soruları onayla, projeyi bağla
+npx vercel --prod     # canlıya al
+```
+
+> ⚠️ **Önemli — Firebase'e Vercel adresini tanıt:** Vercel adresinde giriş
+> yapılabilmesi için o alan adını Firebase'e eklemelisin. Firebase Console →
+> **Authentication → Settings → Authorized domains → Add domain** yolundan
+> `kpss-takip.vercel.app` adresini (ve varsa özel alan adını) ekle. Aksi
+> halde bazı tarayıcılarda giriş engellenebilir.
+
+> Güvenlik kuralları (`firestore.rules`) Vercel'den yüklenmez; onları bir kez
+> `npx firebase-tools deploy --only firestore:rules` ile ya da Firebase
+> Console'daki Firestore **Rules** sekmesinden yüklemen yeterli.
+
+---
+
 ## Telefona uygulama gibi ekleme
 
 **iPhone (Safari):**
