@@ -38,15 +38,17 @@ service cloud.firestore {
         && request.resource.data.ownerUid == request.auth.uid
         && request.resource.data.memberUids == [request.auth.uid];
 
-      // Odaya katılma: yalnızca memberUids değişir, mevcut üyeler
-      // korunur ve eklenen tek uid seninkidir (arrayUnion etkisi).
+      // Katılma/ayrılma: yalnızca memberUids değişir ve fark (her iki yönde)
+      // yalnızca kendi uid'indir — kendini EKLEYEBİLİR ya da ÇIKARABİLİRSİN,
+      // ama başka kimseyi ekleyip çıkaramazsın (hasOnly boş kümede de geçerli).
       allow update: if request.auth != null
         && request.resource.data.diff(resource.data)
              .affectedKeys().hasOnly(['memberUids'])
         && request.resource.data.memberUids.toSet()
-             .hasAll(resource.data.memberUids.toSet())
-        && request.resource.data.memberUids.toSet()
              .difference(resource.data.memberUids.toSet())
+             .hasOnly([request.auth.uid])
+        && resource.data.memberUids.toSet()
+             .difference(request.resource.data.memberUids.toSet())
              .hasOnly([request.auth.uid]);
 
       allow delete: if false;

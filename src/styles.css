@@ -279,6 +279,16 @@ button {
   padding: var(--space-5) 0;
 }
 
+/* Büyük, kolay basılan kontroller: tek buton (Başlat) tam genişlik,
+   iki buton (Duraklat/Durdur · Devam/Durdur) genişliği paylaşır. */
+.timer-controls .btn {
+  flex: 1;
+  min-height: 64px;
+  padding: 0 var(--space-5);
+  font-size: 1.1875rem;
+  border-radius: var(--radius);
+}
+
 .timer-footer {
   display: flex;
   flex-direction: column;
@@ -309,6 +319,76 @@ button {
   color: var(--text);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+
+/* ---------- Kilometre taşı kutlaması ---------- */
+
+.milestone-toast {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + var(--space-4));
+  left: 50%;
+  z-index: 20;
+  width: min(92%, 420px);
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  text-align: left;
+  animation: milestone-pop 4.5s ease forwards;
+}
+
+.milestone-emoji {
+  font-size: 1.75rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.milestone-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.milestone-name {
+  color: var(--accent);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.milestone-msg {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+@keyframes milestone-pop {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -18px) scale(0.96);
+  }
+  7% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  88% {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -12px) scale(0.98);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .milestone-toast {
+    animation: none;
+    transform: translateX(-50%);
+  }
 }
 
 /* ---------- Butonlar ---------- */
@@ -611,6 +691,10 @@ button {
 
 .board-note {
   text-align: center;
+}
+
+.board-leave {
+  margin-top: var(--space-4);
 }
 
 /* ---------- Alt sekme çubuğu ---------- */

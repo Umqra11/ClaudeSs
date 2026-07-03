@@ -36,6 +36,8 @@ export interface Backend {
   createRoom(uid: string, name: string): Promise<Room>
   /** Kodla odaya katılır; oda yoksa Türkçe hata fırlatır. */
   joinRoom(uid: string, code: string): Promise<Room>
+  /** Odadan ayrılır: kendini memberUids'ten ve roomIds'ten çıkarır. */
+  leaveRoom(uid: string, roomId: string): Promise<void>
   /** Kullanıcının üyesi olduğu odalar. */
   listRooms(uid: string): Promise<Room[]>
   /** Oda belgesini canlı dinler. */

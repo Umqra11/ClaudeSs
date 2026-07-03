@@ -2,6 +2,7 @@
 // (bkz. db.ts). Böylece yerel modda firebase chunk'ı ağa hiç inmez.
 
 import {
+  arrayRemove,
   arrayUnion,
   collection,
   doc,
@@ -154,6 +155,17 @@ class FirebaseBackend implements Backend {
     const room = mapRoomDoc(snap.id, snap.data())
     if (!room.memberUids.includes(uid)) room.memberUids.push(uid)
     return room
+  }
+
+  async leaveRoom(uid: string, roomId: string): Promise<void> {
+    // Oda belgesinden kendini çıkar (kurallar yalnızca kendi uid'ine izin verir).
+    await updateDoc(doc(this.db, 'rooms', roomId), {
+      memberUids: arrayRemove(uid),
+    })
+    await updateDoc(doc(this.db, 'users', uid), {
+      roomIds: arrayRemove(roomId),
+      updatedAt: serverTimestamp(),
+    })
   }
 
   async listRooms(uid: string): Promise<Room[]> {

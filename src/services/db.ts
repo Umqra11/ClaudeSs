@@ -110,6 +110,25 @@ class LocalBackend implements Backend {
     return room
   }
 
+  async leaveRoom(uid: string, roomId: string): Promise<void> {
+    const rooms = this.readRooms()
+    const room = rooms.find((r) => r.id === roomId)
+    if (room) {
+      room.memberUids = room.memberUids.filter((u) => u !== uid)
+      // Üye kalmadıysa odayı tümden temizle (yerel modda cihaza özel).
+      const next = room.memberUids.length
+        ? rooms.map((r) => (r.id === roomId ? room : r))
+        : rooms.filter((r) => r.id !== roomId)
+      this.writeRooms(next)
+    }
+    const user = await this.resolveSession()
+    if (user && user.uid === uid && user.roomIds.includes(roomId)) {
+      await this.updateUser(uid, {
+        roomIds: user.roomIds.filter((id) => id !== roomId),
+      })
+    }
+  }
+
   async listRooms(uid: string): Promise<Room[]> {
     return this.readRooms().filter((r) => r.memberUids.includes(uid))
   }
@@ -165,6 +184,7 @@ export const db: Backend = {
   updateUser: (uid, patch) => getBackend().then((b) => b.updateUser(uid, patch)),
   createRoom: (uid, name) => getBackend().then((b) => b.createRoom(uid, name)),
   joinRoom: (uid, code) => getBackend().then((b) => b.joinRoom(uid, code)),
+  leaveRoom: (uid, roomId) => getBackend().then((b) => b.leaveRoom(uid, roomId)),
   listRooms: (uid) => getBackend().then((b) => b.listRooms(uid)),
   subscribeRoom(roomId, cb) {
     let unsub: Unsubscribe | null = null

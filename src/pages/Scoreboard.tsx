@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRoom } from '../hooks/useRoom'
 import { formatClock } from '../lib/format'
 import { getWeekId } from '../lib/week'
-import type { UserProfile } from '../services/db'
+import { db, type UserProfile } from '../services/db'
 
 interface ScoreboardProps {
   user: UserProfile
@@ -13,7 +13,35 @@ interface ScoreboardProps {
 export default function Scoreboard({ user, roomId, onBack }: ScoreboardProps) {
   const { room, members } = useRoom(roomId)
   const [copied, setCopied] = useState(false)
+  const [confirmLeave, setConfirmLeave] = useState(false)
+  const [leaving, setLeaving] = useState(false)
   const [, setTick] = useState(0)
+  const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Onay bekleyen "Ayrıl" ~3 sn dokunulmazsa eski haline döner
+  useEffect(() => {
+    if (!confirmLeave) return
+    confirmTimer.current = setTimeout(() => setConfirmLeave(false), 3000)
+    return () => {
+      if (confirmTimer.current) clearTimeout(confirmTimer.current)
+    }
+  }, [confirmLeave])
+
+  async function handleLeave() {
+    if (leaving) return
+    if (!confirmLeave) {
+      setConfirmLeave(true)
+      return
+    }
+    setLeaving(true)
+    try {
+      await db.leaveRoom(user.uid, roomId)
+      onBack()
+    } catch {
+      setLeaving(false)
+      setConfirmLeave(false)
+    }
+  }
 
   // Canlı akış: çalışan üyelerin süresi istemcide her saniye
   // yerel olarak hesaplanır — Firestore'a saniyelik yazım yok.
@@ -112,6 +140,21 @@ export default function Scoreboard({ user, roomId, onBack }: ScoreboardProps) {
       </div>
 
       <p className="reset-note board-note">Salı 00:00'da sıfırlanır</p>
+
+      <button
+        type="button"
+        className={`btn btn-wide board-leave${
+          confirmLeave ? ' btn-danger' : ' btn-secondary'
+        }`}
+        onClick={handleLeave}
+        disabled={leaving}
+      >
+        {leaving
+          ? 'Ayrılıyor…'
+          : confirmLeave
+            ? 'Emin misin? Ayrıl'
+            : 'Odadan Ayrıl'}
+      </button>
     </main>
   )
 }

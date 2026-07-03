@@ -16,6 +16,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { db, type UserProfile } from '../services/db'
 import { getWeekId, weekStartMs } from '../lib/week'
+import { formatClock } from '../lib/format'
+import {
+  clearStudyNotification,
+  ensureStudyPermission,
+  showStudyNotification,
+} from '../lib/notify'
 
 export type TimerStatus = 'idle' | 'running' | 'paused'
 
@@ -133,6 +139,43 @@ export function useTimer(user: UserProfile) {
     return () => clearInterval(id)
   }, [state.status])
 
+  // Uygulamaya geri dönünce bildirimi tazele (arka planda SW uyumuş olabilir)
+  useEffect(() => {
+    if (state.status !== 'running') return
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      const s = stateRef.current
+      if (s.status === 'running') {
+        void showStudyNotification(s.sessionStartMs ?? s.startedAt ?? Date.now())
+      }
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [state.status])
+
+  // Sekme/PWA başlığında canlı süre (izin gerektirmez)
+  useEffect(() => {
+    const base = 'KPSS Takip'
+    if (state.status !== 'running') {
+      document.title = base
+      return
+    }
+    const update = () => {
+      const s = stateRef.current
+      const sec = Math.floor(
+        s.accumulatedSec +
+          (s.startedAt ? (Date.now() - s.startedAt) / 1000 : 0),
+      )
+      document.title = `${formatClock(sec)} · KPSS`
+    }
+    update()
+    const id = setInterval(update, 1000)
+    return () => {
+      clearInterval(id)
+      document.title = base
+    }
+  }, [state.status])
+
   const syncBackend = useCallback(
     (s: TimerState, w: WeekTotal) => {
       db.updateUser(user.uid, {
@@ -181,6 +224,10 @@ export function useTimer(user: UserProfile) {
     }
     setState(s)
     syncBackend(s, weekRef.current)
+    // Kullanıcı hareketi: izin iste, sonra bildirimi göster
+    void ensureStudyPermission().then((ok) => {
+      if (ok) void showStudyNotification(now)
+    })
   }, [syncBackend])
 
   const pause = useCallback(() => {
@@ -196,6 +243,7 @@ export function useTimer(user: UserProfile) {
     }
     setState(s)
     syncBackend(s, weekRef.current)
+    void clearStudyNotification()
   }, [syncBackend])
 
   const resume = useCallback(() => {
@@ -210,6 +258,7 @@ export function useTimer(user: UserProfile) {
     }
     setState(s)
     syncBackend(s, weekRef.current)
+    void showStudyNotification(s.sessionStartMs ?? now)
   }, [syncBackend])
 
   const stop = useCallback(() => {
@@ -243,6 +292,7 @@ export function useTimer(user: UserProfile) {
     setWeek(w)
     setState(IDLE)
     syncBackend(IDLE, w)
+    void clearStudyNotification()
   }, [setWeek, syncBackend])
 
   // Görünen değerler — her render'da zaman damgasından hesaplanır

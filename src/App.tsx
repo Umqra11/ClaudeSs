@@ -38,10 +38,12 @@ export default function App() {
     content = <Rooms key={roomsKey} user={user} onOpenRoom={setRoomId} />
   }
 
+  const inRoom = page === 'rooms' && roomId != null
+
   return (
     <div className="app">
       {content}
-      <TabBar active={page} onChange={changePage} />
+      <TabBar active={page} onChange={changePage} inRoom={inRoom} />
     </div>
   )
 }
