@@ -7,7 +7,7 @@ import Profile from './pages/Profile'
 import Welcome from './pages/Welcome'
 import { useAuth } from './hooks/useAuth'
 import { useRooms } from './hooks/useRoom'
-import type { UserProfile } from './services/db'
+import type { Room, UserProfile } from './services/db'
 
 export default function App() {
   const { status, user, register } = useAuth()
@@ -25,7 +25,7 @@ function Main({ user }: { user: UserProfile }) {
   const [page, setPage] = useState<Page>('timer')
   // Tek oda modeli: kullanıcının (varsa tek) odası. Odalar sekmesi
   // odası olana doğrudan liderlik tablosunu açar.
-  const { rooms, refresh } = useRooms(user.uid)
+  const { rooms, refresh, setKnown } = useRooms(user.uid)
   const room = rooms?.[0] ?? null
 
   let content
@@ -36,9 +36,18 @@ function Main({ user }: { user: UserProfile }) {
   } else if (rooms === null) {
     content = null // oda bilgisi yükleniyor — kısa an
   } else if (room) {
-    content = <Scoreboard user={user} roomId={room.id} onLeft={refresh} />
+    // Ayrılınca ağ yanıtını beklemeden Oda Kur/Katıl ekranına geç
+    content = (
+      <Scoreboard user={user} roomId={room.id} onLeft={() => setKnown([])} />
+    )
   } else {
-    content = <Rooms user={user} onChanged={refresh} />
+    // Kur/katıl başarınca dönen odayla anında scoreboard'a geç
+    content = (
+      <Rooms
+        user={user}
+        onChanged={(known?: Room) => (known ? setKnown([known]) : refresh())}
+      />
+    )
   }
 
   return (

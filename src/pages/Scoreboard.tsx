@@ -28,7 +28,6 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
   const [leaveError, setLeaveError] = useState('')
   const [reactTarget, setReactTarget] = useState<string | null>(null)
   const [reactText, setReactText] = useState('')
-  const [sending, setSending] = useState(false)
   const [, setTick] = useState(0)
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -87,19 +86,14 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
     setReactTarget((prev) => (prev === memberUid ? null : memberUid))
   }
 
-  async function sendReaction(toUid: string, text: string) {
+  function sendReaction(toUid: string, text: string) {
     const trimmed = text.trim().slice(0, REACTION_MAX_LEN)
-    if (!trimmed || sending) return
-    setSending(true)
-    try {
-      await db.sendReaction(roomId, user.uid, user.name, toUid, trimmed)
-      setReactTarget(null)
-      setReactText('')
-    } catch {
-      /* çevrimdışı vb. — panel açık kalır, tekrar denenebilir */
-    } finally {
-      setSending(false)
-    }
+    if (!trimmed) return
+    // Panel anında kapanır; gönderim arka planda. Onay, balonun canlı
+    // dinleyiciyle görünmesidir (çevrimdışıysa balon çıkmaz, tekrar denenir).
+    setReactTarget(null)
+    setReactText('')
+    void db.sendReaction(roomId, user.uid, user.name, toUid, trimmed).catch(() => {})
   }
 
   const now = Date.now()
@@ -187,7 +181,7 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
                   className="reaction-form"
                   onSubmit={(e) => {
                     e.preventDefault()
-                    void sendReaction(m.uid, reactText)
+                    sendReaction(m.uid, reactText)
                   }}
                 >
                   <input
@@ -202,7 +196,7 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
                   <button
                     type="submit"
                     className="btn btn-primary reaction-send"
-                    disabled={!reactText.trim() || sending}
+                    disabled={!reactText.trim()}
                   >
                     Gönder
                   </button>
@@ -213,8 +207,7 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
                       key={q}
                       type="button"
                       className="reaction-chip"
-                      disabled={sending}
-                      onClick={() => void sendReaction(m.uid, q)}
+                      onClick={() => sendReaction(m.uid, q)}
                     >
                       {q}
                     </button>
@@ -224,8 +217,7 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
                       key={e}
                       type="button"
                       className="reaction-chip reaction-chip-emoji"
-                      disabled={sending}
-                      onClick={() => void sendReaction(m.uid, e)}
+                      onClick={() => sendReaction(m.uid, e)}
                     >
                       {e}
                     </button>

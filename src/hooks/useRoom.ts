@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { db, type Reaction, type Room, type UserProfile } from '../services/db'
 
-/** Kullanıcının oda listesi (elle tazelenebilir). */
+/** Kullanıcının oda listesi (elle tazelenebilir + optimistic yazılabilir). */
 export function useRooms(uid: string) {
   const [rooms, setRooms] = useState<Room[] | null>(null)
 
@@ -11,11 +11,24 @@ export function useRooms(uid: string) {
       .catch(() => setRooms([]))
   }, [uid])
 
+  /** Bilinen sonucu ağ beklemeden uygula (kur/katıl/ayrıl sonrası anında
+   *  ekran geçişi); ardından arka planda gerçek listeyle doğrulanır. */
+  const setKnown = useCallback(
+    (known: Room[]) => {
+      setRooms(known)
+      void db
+        .listRooms(uid)
+        .then(setRooms)
+        .catch(() => {})
+    },
+    [uid],
+  )
+
   useEffect(() => {
     refresh()
   }, [refresh])
 
-  return { rooms, refresh }
+  return { rooms, refresh, setKnown }
 }
 
 /** Seçili odanın belgesi + üyeleri + tepkilerinin canlı akışı. */

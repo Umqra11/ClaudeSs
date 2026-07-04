@@ -9,7 +9,9 @@ type View = 'list' | 'create' | 'created' | 'join'
 
 interface RoomsProps {
   user: UserProfile
-  onChanged: () => void
+  /** Oda kurulunca/katılınca çağrılır; oda verilirse App ağ beklemeden
+   *  doğrudan o odanın liderlik tablosuna geçer. */
+  onChanged: (room?: Room) => void
 }
 
 function PeopleIcon({ size = 28 }: { size?: number }) {
@@ -66,9 +68,9 @@ export default function Rooms({ user, onChanged }: RoomsProps) {
     setBusy(true)
     setError('')
     try {
-      await db.joinRoom(user.uid, code)
+      const room = await db.joinRoom(user.uid, code)
       setJoinCode('')
-      onChanged() // App taze listeyi çekip Scoreboard'u açar
+      onChanged(room) // App ağ beklemeden Scoreboard'u açar
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Bir şeyler ters gitti')
     } finally {
@@ -155,7 +157,7 @@ export default function Rooms({ user, onChanged }: RoomsProps) {
           <button
             type="button"
             className="btn btn-secondary btn-wide"
-            onClick={onChanged}
+            onClick={() => onChanged(createdRoom)}
           >
             Odaya Git
           </button>

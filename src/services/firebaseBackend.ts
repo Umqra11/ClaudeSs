@@ -142,10 +142,12 @@ class FirebaseBackend implements Backend {
       memberUids: [uid],
       createdAt: serverTimestamp(),
     })
-    await updateDoc(doc(this.db, 'users', uid), {
+    // roomIds bilgilendirme amaçlı (listeleme memberUids sorgusuyla);
+    // kullanıcıyı bekletmemek için arka planda yazılır.
+    void updateDoc(doc(this.db, 'users', uid), {
       roomIds: arrayUnion(roomRef.id),
       updatedAt: serverTimestamp(),
-    })
+    }).catch(() => {})
     return {
       id: roomRef.id,
       name,
@@ -157,33 +159,34 @@ class FirebaseBackend implements Backend {
   }
 
   async joinRoom(uid: string, code: string): Promise<Room> {
-    await this.assertNotInRoom(uid)
+    // Tek oda kontrolü ile kod sorgusu paralel — bir tur ağ beklemesi azalır
     const q = query(
       collection(this.db, 'rooms'),
       where('code', '==', code.toUpperCase()),
     )
-    const snaps = await getDocs(q)
+    const [, snaps] = await Promise.all([this.assertNotInRoom(uid), getDocs(q)])
     if (snaps.empty) throw new Error(ROOM_NOT_FOUND)
     const snap = snaps.docs[0]
     await updateDoc(snap.ref, { memberUids: arrayUnion(uid) })
-    await updateDoc(doc(this.db, 'users', uid), {
+    void updateDoc(doc(this.db, 'users', uid), {
       roomIds: arrayUnion(snap.id),
       updatedAt: serverTimestamp(),
-    })
+    }).catch(() => {})
     const room = mapRoomDoc(snap.id, snap.data())
     if (!room.memberUids.includes(uid)) room.memberUids.push(uid)
     return room
   }
 
   async leaveRoom(uid: string, roomId: string): Promise<void> {
-    // Oda belgesinden kendini çıkar (kurallar yalnızca kendi uid'ine izin verir).
+    // Kritik yazım: oda belgesinden kendini çıkar (hata görünür kalmalı).
     await updateDoc(doc(this.db, 'rooms', roomId), {
       memberUids: arrayRemove(uid),
     })
-    await updateDoc(doc(this.db, 'users', uid), {
+    // roomIds temizliği arka planda — kullanıcı bekletilmez.
+    void updateDoc(doc(this.db, 'users', uid), {
       roomIds: arrayRemove(roomId),
       updatedAt: serverTimestamp(),
-    })
+    }).catch(() => {})
   }
 
   async listRooms(uid: string): Promise<Room[]> {

@@ -42,3 +42,43 @@ export function recordSession(
   }
   return s
 }
+
+/**
+ * Aktif (koşan ya da duraklatılmış) seansın henüz güne İŞLENMEMİŞ
+ * süresi (saniye). useTimer'ın localStorage kaydını ('kpss.timer',
+ * aynı biçim) okur; kayıt yoksa/başka kullanıcınınsa 0.
+ * Profil sayfası toplamları canlı akıtmak için kullanır.
+ */
+export function getActiveSessionSec(uid: string): number {
+  try {
+    const raw = localStorage.getItem('kpss.timer')
+    if (!raw) return 0
+    const t = JSON.parse(raw) as {
+      uid?: string
+      status?: string
+      startedAt?: number | null
+      accumulatedSec?: number
+    }
+    if (t.uid !== uid) return 0
+    if (t.status !== 'running' && t.status !== 'paused') return 0
+    const running =
+      t.status === 'running' && t.startedAt
+        ? (Date.now() - t.startedAt) / 1000
+        : 0
+    return Math.max(0, Math.floor((t.accumulatedSec ?? 0) + running))
+  } catch {
+    return 0
+  }
+}
+
+/** Aktif seans koşuyor mu? (Profil tick'i yalnızca o zaman gerekir.) */
+export function isSessionRunning(uid: string): boolean {
+  try {
+    const raw = localStorage.getItem('kpss.timer')
+    if (!raw) return false
+    const t = JSON.parse(raw) as { uid?: string; status?: string }
+    return t.uid === uid && t.status === 'running'
+  } catch {
+    return false
+  }
+}

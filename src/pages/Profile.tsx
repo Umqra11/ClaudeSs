@@ -1,7 +1,7 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatWeekTotal } from '../lib/format'
 import { getDayId, getWeekId } from '../lib/week'
-import { getStats } from '../lib/stats'
+import { getActiveSessionSec, getStats, isSessionRunning } from '../lib/stats'
 import type { UserProfile } from '../services/db'
 
 interface ProfileProps {
@@ -182,7 +182,15 @@ function LineChart({ points }: { points: DayPoint[] }) {
 export default function Profile({ user }: ProfileProps) {
   const stats = getStats(user)
 
-  const { chartPoints, weekRows, todaySec, thisWeekSec } = useMemo(() => {
+  // Aktif seans koşuyorsa toplamlar canlı aksın diye saniyelik tick
+  const [, setTick] = useState(0)
+  useEffect(() => {
+    if (!isSessionRunning(user.uid)) return
+    const id = setInterval(() => setTick((t) => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [user.uid])
+
+  const { chartPoints, weekRows, todaySec, daysThisWeekSec } = useMemo(() => {
     const now = Date.now()
     const todayId = getDayId()
     const currentWeekId = getWeekId()
@@ -208,12 +216,31 @@ export default function Profile({ user }: ProfileProps) {
       chartPoints,
       weekRows,
       todaySec: stats.days[todayId] ?? 0,
-      thisWeekSec: byWeek.get(currentWeekId) ?? 0,
+      daysThisWeekSec: byWeek.get(currentWeekId) ?? 0,
     }
   }, [stats, stats.days, stats.allTimeSec])
 
+  // --- Canlı görünüm değerleri ---
+  // Aktif (koşan/duraklatılmış) seans henüz güne işlenmedi; toplamlarda
+  // canlı gösterilir. Ayrıca günlük takip sonradan eklendiği için bu
+  // haftanın kayıtlı haftalık toplamı günlerden büyükse aradaki fark
+  // (eski süreler) tüm zamanlara ve bu haftaya eklenir — gösterim
+  // düzeyinde; gelecek haftalarda fark kendiliğinden kapanır.
+  const activeSec = getActiveSessionSec(user.uid)
+  const weekRecordedSec =
+    user.weekId === getWeekId() ? user.weekTotalSec : 0
+  const weekAdjustSec = Math.max(0, weekRecordedSec - daysThisWeekSec)
+  const displayAllTime = stats.allTimeSec + weekAdjustSec + activeSec
+  const displayThisWeek = daysThisWeekSec + weekAdjustSec + activeSec
+  const displayToday = todaySec + activeSec
+
+  // Grafik + günlük listede bugünün noktası da aktif seansı içersin
+  const livePoints = chartPoints.map((p, i) =>
+    i === chartPoints.length - 1 ? { ...p, sec: p.sec + activeSec } : p,
+  )
+
   // Günlük liste: son 7 gün, yeniden eskiye
-  const dailyRows = [...chartPoints].slice(-7).reverse()
+  const dailyRows = [...livePoints].slice(-7).reverse()
 
   return (
     <main className="page profile-page">
@@ -224,21 +251,21 @@ export default function Profile({ user }: ProfileProps) {
       <div className="stat-tiles">
         <div className="stat-tile stat-tile-hero">
           <span className="stat-label">Tüm zamanlar</span>
-          <span className="stat-value">{formatWeekTotal(stats.allTimeSec)}</span>
+          <span className="stat-value">{formatWeekTotal(displayAllTime)}</span>
         </div>
         <div className="stat-tile">
           <span className="stat-label">Bu hafta</span>
-          <span className="stat-value">{formatWeekTotal(thisWeekSec)}</span>
+          <span className="stat-value">{formatWeekTotal(displayThisWeek)}</span>
         </div>
         <div className="stat-tile">
           <span className="stat-label">Bugün</span>
-          <span className="stat-value">{formatWeekTotal(todaySec)}</span>
+          <span className="stat-value">{formatWeekTotal(displayToday)}</span>
         </div>
       </div>
 
       <section className="profile-section">
         <h2 className="section-title">Son 14 gün</h2>
-        <LineChart points={chartPoints} />
+        <LineChart points={livePoints} />
       </section>
 
       <section className="profile-section">
@@ -270,7 +297,8 @@ export default function Profile({ user }: ProfileProps) {
       )}
 
       <p className="reset-note profile-note">
-        Süreler kronometre durdurulduğunda güne işlenir.
+        Aktif seans toplamlara canlı yansır; kalıcı kayıt kronometre
+        durdurulunca güne işlenir.
       </p>
     </main>
   )
