@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatWeekTotal } from '../lib/format'
 import { getDayId, getWeekId } from '../lib/week'
-import { getActiveSessionSec, getStats, isSessionRunning } from '../lib/stats'
+import { activeSessionByDay, getStats, isSessionRunning } from '../lib/stats'
 import type { UserProfile } from '../services/db'
 
 interface ProfileProps {
@@ -221,22 +221,39 @@ export default function Profile({ user }: ProfileProps) {
   }, [stats, stats.days, stats.allTimeSec])
 
   // --- Canlı görünüm değerleri ---
-  // Aktif (koşan/duraklatılmış) seans henüz güne işlenmedi; toplamlarda
-  // canlı gösterilir. Ayrıca günlük takip sonradan eklendiği için bu
-  // haftanın kayıtlı haftalık toplamı günlerden büyükse aradaki fark
-  // (eski süreler) tüm zamanlara ve bu haftaya eklenir — gösterim
-  // düzeyinde; gelecek haftalarda fark kendiliğinden kapanır.
-  const activeSec = getActiveSessionSec(user.uid)
+  // Aktif (koşan/duraklatılmış) seans henüz güne işlenmedi; GÜN-BAZLI
+  // dağıtılarak canlı gösterilir — gece yarısını kesen seansta 00:00
+  // öncesi önceki günde kalır, "Bugün" yalnızca sonrası payı gösterir.
+  // Ayrıca günlük takip sonradan eklendiği için bu haftanın kayıtlı
+  // haftalık toplamı günlerden büyükse aradaki fark (eski süreler)
+  // tüm zamanlara ve bu haftaya eklenir — gösterim düzeyinde.
+  const activeByDay = activeSessionByDay(user.uid)
+  let activeSec = 0
+  for (const sec of Object.values(activeByDay)) activeSec += sec
+  activeSec = Math.floor(activeSec)
+  const todayId = getDayId()
+  const activeTodaySec = Math.floor(activeByDay[todayId] ?? 0)
+  const currentWeekIdNow = getWeekId()
+  let activeThisWeekSec = 0
+  for (const [dayId, sec] of Object.entries(activeByDay)) {
+    if (getWeekId(dayIdToDate(dayId)) === currentWeekIdNow) {
+      activeThisWeekSec += sec
+    }
+  }
+  activeThisWeekSec = Math.floor(activeThisWeekSec)
+
   const weekRecordedSec =
-    user.weekId === getWeekId() ? user.weekTotalSec : 0
+    user.weekId === currentWeekIdNow ? user.weekTotalSec : 0
   const weekAdjustSec = Math.max(0, weekRecordedSec - daysThisWeekSec)
   const displayAllTime = stats.allTimeSec + weekAdjustSec + activeSec
-  const displayThisWeek = daysThisWeekSec + weekAdjustSec + activeSec
-  const displayToday = todaySec + activeSec
+  const displayThisWeek = daysThisWeekSec + weekAdjustSec + activeThisWeekSec
+  const displayToday = todaySec + activeTodaySec
 
-  // Grafik + günlük listede bugünün noktası da aktif seansı içersin
-  const livePoints = chartPoints.map((p, i) =>
-    i === chartPoints.length - 1 ? { ...p, sec: p.sec + activeSec } : p,
+  // Grafik + günlük listede HER günün noktası kendi aktif payını içerir
+  const livePoints = chartPoints.map((p) =>
+    activeByDay[p.dayId]
+      ? { ...p, sec: p.sec + Math.floor(activeByDay[p.dayId]) }
+      : p,
   )
 
   // Günlük liste: son 7 gün, yeniden eskiye

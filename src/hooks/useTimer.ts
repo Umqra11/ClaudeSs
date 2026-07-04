@@ -15,9 +15,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { db, type UserProfile } from '../services/db'
-import { getDayId, getWeekId, weekStartMs } from '../lib/week'
+import { getWeekId, weekStartMs } from '../lib/week'
 import { formatClock } from '../lib/format'
-import { recordSession } from '../lib/stats'
+import { computeSessionDays, recordSessionDays } from '../lib/stats'
 import {
   clearStudyNotification,
   ensureStudyPermission,
@@ -291,14 +291,10 @@ export function useTimer(user: UserProfile) {
       totalSec: base + runningCurrentSec + accumCurrentSec,
     }
 
-    // Günlük geçmiş + tüm zamanlar: seansın TAM süresi (hafta sınırında
-    // düşen kısım dahil) bittiği güne yazılır.
-    const fullRunningSec =
-      prev.status === 'running' && prev.startedAt
-        ? Math.max(0, (now - prev.startedAt) / 1000)
-        : 0
-    const sessionSec = Math.round(prev.accumulatedSec + fullRunningSec)
-    const stats = recordSession(user, getDayId(new Date(now)), sessionSec)
+    // Günlük geçmiş + tüm zamanlar: seans Istanbul gün sınırlarında
+    // otomatik bölünür — gece yarısını kesen seansta 00:00 öncesi önceki
+    // güne, sonrası yeni güne yazılır (kullanıcı bir şey yapmaz).
+    const stats = recordSessionDays(user, computeSessionDays(prev, now))
 
     setWeek(w)
     setState(IDLE)

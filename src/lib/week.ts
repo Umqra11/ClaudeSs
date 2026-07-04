@@ -105,6 +105,39 @@ export function weekStartMs(weekId: string): number {
   return istanbulMidnightUtc(y, m, d)
 }
 
+/** dayId'nin başlangıç anı (o gün 00:00 Istanbul) — UTC epoch ms. */
+export function dayStartMs(dayId: string): number {
+  const [y, m, d] = dayId.split('-').map(Number)
+  return istanbulMidnightUtc(y, m, d)
+}
+
+/**
+ * Sürekli bir [startMs, endMs] aralığını Istanbul GÜN sınırlarında
+ * (gece 00:00) böler. Gece yarısını kesen seanslar böylece her günün
+ * payını ayrı alır: 23:00–01:00 → önceki güne 1 saat, yeni güne 1 saat.
+ * Dönen liste kronolojiktir; sıfır uzunluklu parçalar atlanır.
+ */
+export function splitIntervalByDay(
+  startMs: number,
+  endMs: number,
+): { dayId: string; sec: number }[] {
+  const out: { dayId: string; sec: number }[] = []
+  if (!(endMs > startMs)) return out
+  let cursor = startMs
+  // Guard: bir seansın 1 yıldan uzun sürmesi beklenmez
+  for (let i = 0; i < 370 && cursor < endMs; i++) {
+    const dayId = getDayId(new Date(cursor))
+    const [y, m, d] = dayId.split('-').map(Number)
+    // Bir sonraki gece yarısı (Date.UTC gün taşmasını kendisi halleder)
+    const nextMidnight = istanbulMidnightUtc(y, m, d + 1)
+    const sliceEnd = Math.min(endMs, nextMidnight)
+    const sec = (sliceEnd - cursor) / 1000
+    if (sec > 0) out.push({ dayId, sec })
+    cursor = sliceEnd
+  }
+  return out
+}
+
 /** Bir sonraki sıfırlanma anı (gelecek Salı 00:00 Istanbul) — UTC epoch ms. */
 export function nextResetAt(date: Date = new Date()): number {
   const start = weekStartMs(getWeekId(date))
