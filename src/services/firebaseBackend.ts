@@ -50,6 +50,7 @@ function mapUserDoc(uid: string, d: any): UserProfile {
     roomIds: d.roomIds ?? [],
     days: d.days ?? {},
     allTimeSec: d.allTimeSec ?? 0,
+    lastSeenAt: d.lastSeenAt instanceof Timestamp ? d.lastSeenAt.toMillis() : null,
   }
 }
 
@@ -105,6 +106,7 @@ class FirebaseBackend implements Backend {
       roomIds: [],
       days: {},
       allTimeSec: 0,
+      lastSeenAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     })
     return emptyProfile(uid, name)
@@ -120,6 +122,10 @@ class FirebaseBackend implements Backend {
         patch.sessionStartedAt == null
           ? null
           : Timestamp.fromMillis(patch.sessionStartedAt)
+    }
+    if ('lastSeenAt' in patch) {
+      data.lastSeenAt =
+        patch.lastSeenAt == null ? null : Timestamp.fromMillis(patch.lastSeenAt)
     }
     await updateDoc(doc(this.db, 'users', uid), data)
   }

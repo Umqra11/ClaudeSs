@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRoom } from '../hooks/useRoom'
-import { formatClock } from '../lib/format'
+import { formatClock, formatLastSeen, formatTimeOfDay } from '../lib/format'
 import { getWeekId } from '../lib/week'
 import { db, REACTION_MAX_LEN, type UserProfile } from '../services/db'
 
@@ -113,6 +113,9 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
         liveSec: Math.max(0, Math.floor(base + m.sessionAccumulatedSec + running)),
         // Bu üyeye gelen aktif tepkilerin son 2'si
         bubbles: activeReactions.filter((r) => r.toUid === m.uid).slice(-2),
+        // Çalışmıyorsa WhatsApp tarzı "son görülme" (kendi satırında gösterilmez)
+        lastSeenText:
+          m.uid !== user.uid && !m.isStudying ? formatLastSeen(m.lastSeenAt, now) : null,
       }
     })
     .sort((a, b) => b.liveSec - a.liveSec)
@@ -161,6 +164,11 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
                     çalışıyor
                   </span>
                 )}
+                {m.lastSeenText && (
+                  <span className="board-last-seen">
+                    Son görülme: {m.lastSeenText}
+                  </span>
+                )}
               </span>
               <span className="board-time">{formatClock(m.liveSec)}</span>
             </div>
@@ -170,6 +178,10 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
                 {m.bubbles.map((r) => (
                   <span key={r.id} className="reaction-bubble">
                     <strong>{r.fromName}:</strong> {r.text}
+                    <span className="reaction-time">
+                      {' '}
+                      · {formatTimeOfDay(r.createdAt)}
+                    </span>
                   </span>
                 ))}
               </div>

@@ -689,6 +689,11 @@ button {
   color: var(--accent);
 }
 
+.board-last-seen {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 .board-time {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
@@ -741,6 +746,11 @@ button {
 .reaction-bubble strong {
   color: var(--accent);
   font-weight: 600;
+}
+
+.reaction-time {
+  color: var(--text-muted);
+  font-size: 0.75rem;
 }
 
 .reaction-panel {

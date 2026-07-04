@@ -7,6 +7,7 @@ import Profile from './pages/Profile'
 import Welcome from './pages/Welcome'
 import { useAuth } from './hooks/useAuth'
 import { useRooms } from './hooks/useRoom'
+import { usePresence } from './hooks/usePresence'
 import type { Room, UserProfile } from './services/db'
 
 export default function App() {
@@ -22,6 +23,7 @@ export default function App() {
 }
 
 function Main({ user }: { user: UserProfile }) {
+  usePresence(user.uid)
   const [page, setPage] = useState<Page>('timer')
   // Tek oda modeli: kullanıcının (varsa tek) odası. Odalar sekmesi
   // odası olana doğrudan liderlik tablosunu açar.

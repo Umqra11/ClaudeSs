@@ -14,6 +14,9 @@ export interface UserProfile {
   days: Record<string, number>
   /** Tüm zamanlar toplam çalışma süresi (saniye). */
   allTimeSec: number
+  /** Uygulamanın en son ne zaman kullanıldığı (epoch ms) — WhatsApp
+   *  tarzı "Son görülme". Eski hesaplarda/hiç yazılmadıysa null. */
+  lastSeenAt: number | null
 }
 
 export interface Room {
@@ -111,5 +114,6 @@ export function emptyProfile(uid: string, name: string): UserProfile {
     roomIds: [],
     days: {},
     allTimeSec: 0,
+    lastSeenAt: null,
   }
 }
