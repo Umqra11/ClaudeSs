@@ -1,6 +1,11 @@
 import { initializeApp } from 'firebase/app'
 import { getAuth, type Auth } from 'firebase/auth'
-import { getFirestore, type Firestore } from 'firebase/firestore'
+import {
+  initializeFirestore,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  type Firestore,
+} from 'firebase/firestore'
 import { firebaseConfig, isFirebaseConfigured } from './firebase-config'
 
 // Config doldurulmamışsa Firebase hiç başlatılmaz; uygulama
@@ -11,5 +16,12 @@ export let firebaseDb: Firestore | null = null
 if (isFirebaseConfigured()) {
   const app = initializeApp(firebaseConfig)
   firebaseAuth = getAuth(app)
-  firebaseDb = getFirestore(app)
+  // Çevrimdışı kalıcılık: profil/oda verisi cihazda (IndexedDB) saklanır;
+  // soğuk açılışta okumalar sunucuyu beklemeden yerel kopyadan gelir,
+  // yazımlar çevrimdışıyken kuyruklanıp bağlanınca gönderilir.
+  firebaseDb = initializeFirestore(app, {
+    localCache: persistentLocalCache({
+      tabManager: persistentMultipleTabManager(),
+    }),
+  })
 }

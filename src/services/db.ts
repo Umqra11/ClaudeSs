@@ -237,9 +237,14 @@ let firebasePromise: Promise<Backend> | null = null
 
 function getBackend(): Promise<Backend> {
   if (isLocalMode) return Promise.resolve(localBackend)
-  firebasePromise ??= import('./firebaseBackend').then((m) =>
-    m.createFirebaseBackend(),
-  )
+  // Başarısız yükleme (örn. geçici ağ hatası) ÖNBELLEKLENMEZ: promise
+  // reddedilirse sıfırlanır ki bir sonraki çağrı yeniden denesin.
+  firebasePromise ??= import('./firebaseBackend')
+    .then((m) => m.createFirebaseBackend())
+    .catch((err) => {
+      firebasePromise = null
+      throw err
+    })
   return firebasePromise
 }
 

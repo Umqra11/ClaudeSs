@@ -8,19 +8,35 @@ export function useAuth() {
   const [user, setUser] = useState<UserProfile | null>(null)
 
   // Açılışta kalıcı oturumu çöz (Firebase Auth veya localStorage).
+  // Geçici bir hata (ağ, chunk yüklemesi) kayıtlı kullanıcıyı "yokmuş"
+  // gibi göstermesin diye ilk hata sonrası 1,5 sn bekleyip BİR kez daha
+  // denenir; ancak ikisi de başarısız olursa Welcome'a düşülür.
   useEffect(() => {
     let cancelled = false
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+
+    const apply = (profile: UserProfile | null) => {
+      if (cancelled) return
+      setUser(profile)
+      setStatus(profile ? 'ready' : 'welcome')
+    }
+
     db.resolveSession()
-      .then((profile) => {
-        if (cancelled) return
-        setUser(profile)
-        setStatus(profile ? 'ready' : 'welcome')
-      })
+      .then(apply)
       .catch(() => {
-        if (!cancelled) setStatus('welcome')
+        if (cancelled) return
+        retryTimer = setTimeout(() => {
+          db.resolveSession()
+            .then(apply)
+            .catch(() => {
+              if (!cancelled) setStatus('welcome')
+            })
+        }, 1500)
       })
+
     return () => {
       cancelled = true
+      if (retryTimer) clearTimeout(retryTimer)
     }
   }, [])
 

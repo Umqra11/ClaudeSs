@@ -27,6 +27,43 @@
     <meta name="apple-mobile-web-app-title" content="KPSS Takip" />
   </head>
   <body>
+    <style>
+      /* Açılış göstergesi: React mount olana dek görünür; koyu/açık temaya
+         uyar. React #root içeriğini değiştirince kendiliğinden kaybolur. */
+      #root:empty::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background: #f6f7f7;
+      }
+      #root:empty::after {
+        content: '';
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        width: 36px;
+        height: 36px;
+        margin: -18px 0 0 -18px;
+        border-radius: 50%;
+        border: 3px solid rgba(15, 118, 110, 0.2);
+        border-top-color: #0f766e;
+        animation: kpss-spin 0.8s linear infinite;
+      }
+      @media (prefers-color-scheme: dark) {
+        #root:empty::before {
+          background: #101413;
+        }
+        #root:empty::after {
+          border-color: rgba(45, 212, 191, 0.2);
+          border-top-color: #2dd4bf;
+        }
+      }
+      @keyframes kpss-spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+    </style>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
