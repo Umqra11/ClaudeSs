@@ -160,14 +160,23 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
         m.isStudying && m.sessionStartedAt
           ? (now - m.sessionStartedAt) / 1000
           : 0
+      // Duraklatılmış: seans birikmiş ama koşmuyor. Bu durumu ("duraklatıldı")
+      // herkeste — kendi satırında dahi — göster ki duraklat geri bildirimi
+      // görünür olsun. Tam durmuş (session yok) üyede ise "Son görülme".
+      const isPaused = !m.isStudying && m.sessionAccumulatedSec > 0
       return {
         ...m,
         liveSec: Math.max(0, Math.floor(base + m.sessionAccumulatedSec + running)),
         // Bu üyeye gelen aktif tepkilerin son 2'si
         bubbles: activeReactions.filter((r) => r.toUid === m.uid).slice(-2),
-        // Çalışmıyorsa WhatsApp tarzı "son görülme" (kendi satırında gösterilmez)
+        isPaused,
+        // Duraklatınca yazılan anın saati (kendi satırında da gösterilir)
+        pausedText: isPaused ? formatTimeOfDay(m.lastSeenAt ?? now) : null,
+        // Tam durmuşsa WhatsApp tarzı "son görülme" (kendi satırında gösterilmez)
         lastSeenText:
-          m.uid !== user.uid && !m.isStudying ? formatLastSeen(m.lastSeenAt, now) : null,
+          m.uid !== user.uid && !m.isStudying && !isPaused
+            ? formatLastSeen(m.lastSeenAt, now)
+            : null,
       }
     })
     .sort((a, b) => b.liveSec - a.liveSec)
@@ -268,6 +277,11 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
                   <span className="board-studying">
                     <span className="pulse-dot" aria-hidden="true" />
                     çalışıyor
+                  </span>
+                )}
+                {m.isPaused && (
+                  <span className="board-paused">
+                    duraklatıldı{m.pausedText ? ` · ${m.pausedText}` : ''}
                   </span>
                 )}
                 {m.lastSeenText && (

@@ -847,6 +847,11 @@ button {
   color: var(--accent);
 }
 
+.board-paused {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 .board-last-seen {
   font-size: 0.6875rem;
   color: var(--text-muted);

@@ -178,13 +178,21 @@ export function useTimer(user: UserProfile) {
   }, [state.status])
 
   const syncBackend = useCallback(
-    (s: TimerState, w: WeekTotal) => {
+    (
+      s: TimerState,
+      w: WeekTotal,
+      // Ek alanlar (ör. lastSeenAt) — AYNI yazımda gitmeli. Yerel modda
+      // updateUser oku-değiştir-yaz olduğu için ikinci ayrı bir çağrı,
+      // bayat veriyle sessionAccumulatedSec'i sıfırlayıp yarışırdı.
+      extra?: { lastSeenAt?: number | null },
+    ) => {
       db.updateUser(user.uid, {
         isStudying: s.status === 'running',
         sessionStartedAt: s.startedAt,
         sessionAccumulatedSec: Math.round(s.accumulatedSec),
         weekId: w.weekId,
         weekTotalSec: Math.round(w.totalSec),
+        ...extra,
       }).catch(() => {
         /* çevrimdışı vb. — localStorage zaten güncel */
       })
@@ -234,16 +242,16 @@ export function useTimer(user: UserProfile) {
       sessionStartMs: now,
     }
     setState(s)
-    syncBackend(s, weekRef.current)
     // "Son görülme" yalnızca DURDURMA saatini göstermeli: yeni seans
     // başlarken varsa bayat (önceki sürümden kalma) değeri temizle. Seans
-    // sürerken zaten gizli; Durdur'da gerçek durdurma saati yazılır.
-    void db.updateUser(user.uid, { lastSeenAt: null }).catch(() => {})
+    // sürerken zaten gizli; Durdur'da gerçek durdurma saati yazılır. Aynı
+    // yazımda gider (ayrı çağrı yerel modda yarışırdı).
+    syncBackend(s, weekRef.current, { lastSeenAt: null })
     // Kullanıcı hareketi: izin iste, sonra bildirimi göster
     void ensureStudyPermission().then((ok) => {
       if (ok) void showStudyNotification(now)
     })
-  }, [syncBackend, user.uid])
+  }, [syncBackend])
 
   const pause = useCallback(() => {
     const prev = stateRef.current
@@ -257,13 +265,13 @@ export function useTimer(user: UserProfile) {
       lastAccumAt: now,
     }
     setState(s)
-    syncBackend(s, weekRef.current)
     // "Son görülme" = son etkinlik anı. Duraklatınca üye "çalışmıyor"
     // durumuna geçer; liderlikte güncel duraklatma saati gösterilsin diye
-    // syncBackend'in kapsamadığı lastSeenAt ayrıca yazılır.
-    void db.updateUser(user.uid, { lastSeenAt: now }).catch(() => {})
+    // lastSeenAt yazılır — AYNI syncBackend yazımında (ayrı çağrı yerel
+    // modda sessionAccumulatedSec'i sıfırlayarak yarışırdı).
+    syncBackend(s, weekRef.current, { lastSeenAt: now })
     void clearStudyNotification()
-  }, [syncBackend, user.uid])
+  }, [syncBackend])
 
   const resume = useCallback(() => {
     const prev = stateRef.current
