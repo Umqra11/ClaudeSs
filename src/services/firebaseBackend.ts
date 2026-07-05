@@ -106,7 +106,7 @@ class FirebaseBackend implements Backend {
       roomIds: [],
       days: {},
       allTimeSec: 0,
-      lastSeenAt: serverTimestamp(),
+      lastSeenAt: null, // henüz çalışma girdisi yok
       updatedAt: serverTimestamp(),
     })
     return emptyProfile(uid, name)

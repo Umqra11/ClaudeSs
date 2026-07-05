@@ -14,8 +14,9 @@ export interface UserProfile {
   days: Record<string, number>
   /** Tüm zamanlar toplam çalışma süresi (saniye). */
   allTimeSec: number
-  /** Uygulamanın en son ne zaman kullanıldığı (epoch ms) — WhatsApp
-   *  tarzı "Son görülme". Eski hesaplarda/hiç yazılmadıysa null. */
+  /** Son çalışma girdisi: kronometrenin en son durdurulduğu an (epoch ms).
+   *  Liderlik tablosunda "Son görülme" olarak gösterilir. Hiç çalışma
+   *  durdurulmadıysa / eski hesaplarda null. */
   lastSeenAt: number | null
 }
 

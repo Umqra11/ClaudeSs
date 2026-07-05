@@ -306,6 +306,8 @@ export function useTimer(user: UserProfile) {
       weekTotalSec: Math.round(w.totalSec),
       days: stats.days,
       allTimeSec: Math.round(stats.allTimeSec),
+      // "Son görülme" = son çalışma girdisi (kronometrenin durdurulduğu an).
+      lastSeenAt: now,
     }).catch(() => {
       /* çevrimdışı vb. — localStorage zaten güncel */
     })

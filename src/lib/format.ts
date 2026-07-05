@@ -25,24 +25,19 @@ export function formatTimeOfDay(ms: number): string {
 }
 
 /**
- * WhatsApp tarzı "son görülme": "az önce", "12 dakika önce",
- * "bugün 14:32", "dün 20:15", "3 Tem 09:10". `lastSeenAt` yoksa
- * (eski hesap/hiç yazılmamış) null döner — UI hiçbir şey göstermez.
+ * "Son görülme" = son çalışma girdisinin (kronometrenin durdurulduğu anın)
+ * SAATİ. WhatsApp tarzı, daima saat gösterir: "bugün 14:32", "dün 20:15",
+ * "3 Tem 09:10". `lastSeenAt` yoksa (hiç çalışma durdurulmamış/eski hesap)
+ * null döner — UI hiçbir şey göstermez.
  */
 export function formatLastSeen(
   lastSeenAt: number | null | undefined,
   now: number = Date.now(),
 ): string | null {
   if (lastSeenAt == null) return null
-  const diffSec = Math.floor((now - lastSeenAt) / 1000)
-  if (diffSec < 60) return 'az önce'
-  if (diffSec < 3600) {
-    const m = Math.floor(diffSec / 60)
-    return `${m} dakika önce`
-  }
+  const time = formatTimeOfDay(lastSeenAt)
   const todayId = getDayId(new Date(now))
   const seenDayId = getDayId(new Date(lastSeenAt))
-  const time = formatTimeOfDay(lastSeenAt)
   if (seenDayId === todayId) return `bugün ${time}`
   const yesterdayId = getDayId(new Date(now - 86_400_000))
   if (seenDayId === yesterdayId) return `dün ${time}`
