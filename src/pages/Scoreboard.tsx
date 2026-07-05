@@ -1,8 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRoom } from '../hooks/useRoom'
 import { formatClock, formatLastSeen, formatTimeOfDay } from '../lib/format'
-import { getWeekId } from '../lib/week'
+import { getWeekId, previousWeekId } from '../lib/week'
 import { db, REACTION_MAX_LEN, type UserProfile } from '../services/db'
+
+/** Bir üyenin tamamlanmış (verilen) haftadaki toplam süresi. Üye verisini
+ *  yeni haftaya taşımışsa snapshot'tan (prevWeek*), taşımamışsa güncel
+ *  alandan okur — böylece kim önce açarsa açsın sonuç aynı (yarış-bağımsız). */
+function completedWeekTotal(m: UserProfile, weekId: string): number {
+  if (m.weekId === weekId) return m.weekTotalSec
+  if (m.prevWeekId === weekId) return m.prevWeekTotalSec
+  return 0
+}
 
 interface ScoreboardProps {
   user: UserProfile
@@ -29,7 +38,10 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
   const [reactTarget, setReactTarget] = useState<string | null>(null)
   const [reactText, setReactText] = useState('')
   const [, setTick] = useState(0)
+  const [champBanner, setChampBanner] = useState(false)
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Aynı hafta için ödülün iki kez yazılmasını engelleyen guard
+  const awardedWeekRef = useRef<string | null>(null)
 
   // Canlı akış: çalışan üyelerin süresi istemcide her saniye
   // yerel olarak hesaplanır — Firestore'a saniyelik yazım yok.
@@ -47,6 +59,45 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
       if (confirmTimer.current) clearTimeout(confirmTimer.current)
     }
   }, [confirmLeave])
+
+  // Bu oturumda afişi kapattığımız hafta (tekrar açılmasın)
+  const dismissedWeekRef = useRef<string | null>(null)
+
+  // Haftalık şampiyon tespiti: tamamlanmış haftanın birincisi kendi
+  // şampiyonluk sayacını artırır (self-award — herkes yalnızca kendi
+  // dokümanına yazabilir). Beraberlikte tüm en yüksekler şampiyon sayılır.
+  useEffect(() => {
+    if (members.length === 0) return
+    const judge = previousWeekId(getWeekId())
+    const self = members.find((m) => m.uid === user.uid)
+    if (!self) return
+
+    const myTotal = completedWeekTotal(self, judge)
+    const maxTotal = Math.max(
+      0,
+      ...members.map((m) => completedWeekTotal(m, judge)),
+    )
+    const isChampion = maxTotal > 0 && myTotal === maxTotal
+    if (!isChampion) return
+
+    // Ödülü hafta başına yalnızca bir kez yaz
+    if (self.lastChampionWeekId !== judge && awardedWeekRef.current !== judge) {
+      awardedWeekRef.current = judge
+      void db
+        .updateUser(user.uid, {
+          championshipCount: (self.championshipCount ?? 0) + 1,
+          lastChampionWeekId: judge,
+        })
+        .catch(() => {})
+    }
+    // Bu oturumda kapatılmadıysa karşılama afişini göster
+    if (dismissedWeekRef.current !== judge) setChampBanner(true)
+  }, [members, user.uid])
+
+  function dismissChampBanner() {
+    dismissedWeekRef.current = previousWeekId(getWeekId())
+    setChampBanner(false)
+  }
 
   async function handleLeave() {
     if (leaving) return
@@ -133,6 +184,22 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
         </div>
       </header>
 
+      {champBanner && (
+        <div className="champ-banner" role="status">
+          <span className="champ-banner-text">
+            🏆 Bravo! Bu haftanın şampiyonu sensin!
+          </span>
+          <button
+            type="button"
+            className="champ-banner-close"
+            onClick={dismissChampBanner}
+            aria-label="Kapat"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       <div className="board-list">
         {rows.length === 0 && <p className="board-empty">Üyeler yükleniyor…</p>}
         {rows.map((m, i) => (
@@ -156,6 +223,14 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
                   {m.name}
                   {m.uid === user.uid && (
                     <span className="board-you"> (sen)</span>
+                  )}
+                  {m.championshipCount > 0 && (
+                    <span
+                      className="board-champ"
+                      title={`${m.championshipCount} kez haftanın şampiyonu`}
+                    >
+                      🏆 {m.championshipCount}
+                    </span>
                   )}
                 </span>
                 {m.isStudying && (

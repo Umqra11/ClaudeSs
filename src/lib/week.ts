@@ -105,6 +105,12 @@ export function weekStartMs(weekId: string): number {
   return istanbulMidnightUtc(y, m, d)
 }
 
+/** Verilen haftadan bir önceki haftanın anahtarı. Hafta başından 1 ms
+ *  geri gidip o anın weekId'sini alır (Salı 00:00 sınırı). */
+export function previousWeekId(weekId: string): string {
+  return getWeekId(new Date(weekStartMs(weekId) - 1))
+}
+
 /** dayId'nin başlangıç anı (o gün 00:00 Istanbul) — UTC epoch ms. */
 export function dayStartMs(dayId: string): number {
   const [y, m, d] = dayId.split('-').map(Number)

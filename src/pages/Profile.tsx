@@ -278,6 +278,10 @@ export default function Profile({ user }: ProfileProps) {
           <span className="stat-label">Bugün</span>
           <span className="stat-value">{formatWeekTotal(displayToday)}</span>
         </div>
+        <div className="stat-tile">
+          <span className="stat-label">Şampiyonluk</span>
+          <span className="stat-value">🏆 {user.championshipCount ?? 0}</span>
+        </div>
       </div>
 
       <section className="profile-section">

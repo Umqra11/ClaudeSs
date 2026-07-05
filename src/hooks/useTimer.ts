@@ -199,6 +199,16 @@ export function useTimer(user: UserProfile) {
     didInit.current = true
     if (user.weekId !== weekRef.current.weekId) {
       syncBackend(stateRef.current, weekRef.current)
+      // Hafta devri: weekTotalSec syncBackend ile 0'a çekilmeden önce geçen
+      // haftayı snapshot'la — haftalık şampiyon tespiti bunu okur.
+      if (user.weekId && user.weekTotalSec > 0) {
+        void db
+          .updateUser(user.uid, {
+            prevWeekId: user.weekId,
+            prevWeekTotalSec: user.weekTotalSec,
+          })
+          .catch(() => {})
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
@@ -248,8 +258,12 @@ export function useTimer(user: UserProfile) {
     }
     setState(s)
     syncBackend(s, weekRef.current)
+    // "Son görülme" = son etkinlik anı. Duraklatınca üye "çalışmıyor"
+    // durumuna geçer; liderlikte güncel duraklatma saati gösterilsin diye
+    // syncBackend'in kapsamadığı lastSeenAt ayrıca yazılır.
+    void db.updateUser(user.uid, { lastSeenAt: now }).catch(() => {})
     void clearStudyNotification()
-  }, [syncBackend])
+  }, [syncBackend, user.uid])
 
   const resume = useCallback(() => {
     const prev = stateRef.current
@@ -289,6 +303,10 @@ export function useTimer(user: UserProfile) {
         prev.sessionStartMs >= boundary)
     const accumCurrentSec = accumBelongsToCurrentWeek ? prev.accumulatedSec : 0
 
+    // Uygulama Salı 00:00 sınırını açıkken geçtiyse (yeniden mount olmadan),
+    // eski haftanın toplamı base'te düşer; sıfırlanmadan önce snapshot'la.
+    const rolledOver =
+      !!weekRef.current.weekId && weekRef.current.weekId !== weekIdNow
     const base = weekRef.current.weekId === weekIdNow ? weekRef.current.totalSec : 0
     const w: WeekTotal = {
       weekId: weekIdNow,
@@ -312,6 +330,12 @@ export function useTimer(user: UserProfile) {
       allTimeSec: Math.round(stats.allTimeSec),
       // "Son görülme" = son çalışma girdisi (kronometrenin durdurulduğu an).
       lastSeenAt: now,
+      ...(rolledOver && weekRef.current.totalSec > 0
+        ? {
+            prevWeekId: weekRef.current.weekId,
+            prevWeekTotalSec: Math.round(weekRef.current.totalSec),
+          }
+        : {}),
     }).catch(() => {
       /* çevrimdışı vb. — localStorage zaten güncel */
     })

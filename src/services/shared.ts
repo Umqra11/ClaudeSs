@@ -14,10 +14,21 @@ export interface UserProfile {
   days: Record<string, number>
   /** Tüm zamanlar toplam çalışma süresi (saniye). */
   allTimeSec: number
-  /** Son çalışma girdisi: kronometrenin en son durdurulduğu an (epoch ms).
-   *  Liderlik tablosunda "Son görülme" olarak gösterilir. Hiç çalışma
-   *  durdurulmadıysa / eski hesaplarda null. */
+  /** Son çalışma girdisi: kronometrenin en son duraklatıldığı/durdurulduğu
+   *  an (epoch ms). Liderlik tablosunda "Son görülme" olarak gösterilir.
+   *  Aktif seans yokken en güncel etkinlik anını taşır; hiç çalışma
+   *  girdisi yoksa / eski hesaplarda null. */
   lastSeenAt: number | null
+  /** Toplam haftalık şampiyonluk sayısı (kaç kez haftanın birincisi oldu). */
+  championshipCount: number
+  /** En son şampiyonluk ödülü verilen hafta (weekId). Aynı hafta için
+   *  ikinci kez ödül verilmesini önler. */
+  lastChampionWeekId: string | null
+  /** Bir önceki haftanın anahtarı — hafta devrinde weekTotalSec sıfırlanmadan
+   *  önce alınan anlık kopya. Şampiyon tespiti bunu okur. */
+  prevWeekId: string | null
+  /** prevWeekId haftasının toplam çalışma süresi (saniye) — snapshot. */
+  prevWeekTotalSec: number
 }
 
 export interface Room {
@@ -116,5 +127,9 @@ export function emptyProfile(uid: string, name: string): UserProfile {
     days: {},
     allTimeSec: 0,
     lastSeenAt: null,
+    championshipCount: 0,
+    lastChampionWeekId: null,
+    prevWeekId: null,
+    prevWeekTotalSec: 0,
   }
 }
