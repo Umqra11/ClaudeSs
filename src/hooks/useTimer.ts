@@ -225,11 +225,15 @@ export function useTimer(user: UserProfile) {
     }
     setState(s)
     syncBackend(s, weekRef.current)
+    // "Son görülme" yalnızca DURDURMA saatini göstermeli: yeni seans
+    // başlarken varsa bayat (önceki sürümden kalma) değeri temizle. Seans
+    // sürerken zaten gizli; Durdur'da gerçek durdurma saati yazılır.
+    void db.updateUser(user.uid, { lastSeenAt: null }).catch(() => {})
     // Kullanıcı hareketi: izin iste, sonra bildirimi göster
     void ensureStudyPermission().then((ok) => {
       if (ok) void showStudyNotification(now)
     })
-  }, [syncBackend])
+  }, [syncBackend, user.uid])
 
   const pause = useCallback(() => {
     const prev = stateRef.current
