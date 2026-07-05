@@ -29,3 +29,13 @@ export const MILESTONES: Milestone[] = [
   { sec: 35 * H, name: 'Zirveye Yakın', message: 'Neredeyse zirvedesin, bir gayret daha!' },
   { sec: 40 * H, name: 'Efsane', message: 'Taş çatlasa bu kadar! Efsane bir hafta çıkardın.' },
 ]
+
+/** Verilen haftalık toplamla kazanılmış (eşiği aşılmış) tüm rozetler. */
+export function earnedMilestones(weekSec: number): Milestone[] {
+  return MILESTONES.filter((m) => weekSec >= m.sec)
+}
+
+/** Henüz kazanılmamış ilk rozet (bir sonraki hedef); hepsi geçildiyse null. */
+export function nextMilestone(weekSec: number): Milestone | null {
+  return MILESTONES.find((m) => weekSec < m.sec) ?? null
+}

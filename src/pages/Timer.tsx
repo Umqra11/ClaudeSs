@@ -1,6 +1,12 @@
+import { useState } from 'react'
 import { isLocalMode, type UserProfile } from '../services/db'
 import { useTimer } from '../hooks/useTimer'
 import { useMilestone } from '../hooks/useMilestone'
+import {
+  earnedMilestones,
+  nextMilestone,
+  type Milestone,
+} from '../lib/milestones'
 import { formatClock, formatWeekTotal } from '../lib/format'
 
 interface TimerProps {
@@ -13,10 +19,45 @@ const STATE_LABELS: Record<string, string> = {
   paused: 'Duraklatıldı',
 }
 
+interface StopSummary {
+  sessionSec: number
+  weekSec: number
+  earned: Milestone[]
+  newly: Milestone[]
+  next: Milestone | null
+}
+
 export default function Timer({ user }: TimerProps) {
-  const { status, elapsedSec, weekWithActiveSec, start, pause, resume, stop } =
-    useTimer(user)
+  const {
+    status,
+    elapsedSec,
+    weekTotalSec,
+    weekWithActiveSec,
+    start,
+    pause,
+    resume,
+    stop,
+  } = useTimer(user)
   const milestone = useMilestone(user.uid, weekWithActiveSec)
+  const [summary, setSummary] = useState<StopSummary | null>(null)
+
+  // Durdur: önce bu seansta/haftada kazanılan rozetleri hesapla, sonra
+  // durdur ve kalıcı bir özet pop-up'ı göster (canlı toast kaçırılsa bile
+  // kazanımlar burada görünür).
+  function handleStop() {
+    const before = weekTotalSec // aktif seans hariç, seans öncesi haftalık toplam
+    const finalWeek = weekWithActiveSec // seans dahil, bu haftaki nihai toplam
+    const earned = earnedMilestones(finalWeek)
+    const newly = earned.filter((m) => m.sec > before) // bu seansta yeni aşılanlar
+    stop()
+    setSummary({
+      sessionSec: elapsedSec,
+      weekSec: finalWeek,
+      earned,
+      newly,
+      next: nextMilestone(finalWeek),
+    })
+  }
 
   return (
     <main className="page timer-page">
@@ -58,7 +99,7 @@ export default function Timer({ user }: TimerProps) {
             <button type="button" className="btn btn-secondary" onClick={pause}>
               Duraklat
             </button>
-            <button type="button" className="btn btn-danger" onClick={stop}>
+            <button type="button" className="btn btn-danger" onClick={handleStop}>
               Durdur
             </button>
           </>
@@ -68,7 +109,7 @@ export default function Timer({ user }: TimerProps) {
             <button type="button" className="btn btn-primary" onClick={resume}>
               Devam
             </button>
-            <button type="button" className="btn btn-danger" onClick={stop}>
+            <button type="button" className="btn btn-danger" onClick={handleStop}>
               Durdur
             </button>
           </>
@@ -81,6 +122,84 @@ export default function Timer({ user }: TimerProps) {
         </div>
         <p className="reset-note">Salı 00:00'da sıfırlanır</p>
       </footer>
+
+      {summary && (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Seans özeti"
+          onClick={() => setSummary(null)}
+        >
+          <div className="summary-card" onClick={(e) => e.stopPropagation()}>
+            <h2 className="summary-title">Seansı bitirdin 👏</h2>
+            <p className="summary-sub">
+              Bu seans <strong>{formatWeekTotal(summary.sessionSec)}</strong>
+              <span aria-hidden="true"> · </span>
+              Bu hafta toplam <strong>{formatWeekTotal(summary.weekSec)}</strong>
+            </p>
+
+            {summary.newly.length > 0 && (
+              <div className="summary-new">
+                <p className="summary-new-title">
+                  🎉 Yeni rozet{summary.newly.length > 1 ? 'ler' : ''}!
+                </p>
+                {summary.newly.map((m) => (
+                  <div key={m.sec} className="summary-badge">
+                    <span className="summary-badge-emoji" aria-hidden="true">
+                      🏆
+                    </span>
+                    <span className="summary-badge-text">
+                      <strong className="summary-badge-name">{m.name}</strong>
+                      <span className="summary-badge-msg">{m.message}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {summary.earned.length > 0 ? (
+              <div className="summary-collection">
+                <p className="summary-collection-title">Bu haftaki rozetlerin</p>
+                <div className="summary-chips">
+                  {summary.earned.map((m) => (
+                    <span
+                      key={m.sec}
+                      className={`summary-chip${
+                        summary.newly.includes(m) ? ' summary-chip-new' : ''
+                      }`}
+                    >
+                      🏆 {m.name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p className="summary-empty">
+                Bu hafta henüz rozet yok — ama her dakika sayılıyor!
+              </p>
+            )}
+
+            {summary.next && (
+              <p className="summary-next">
+                Sonraki rozet <strong>{summary.next.name}</strong> için{' '}
+                <strong>
+                  {formatWeekTotal(Math.max(0, summary.next.sec - summary.weekSec))}
+                </strong>{' '}
+                kaldı.
+              </p>
+            )}
+
+            <button
+              type="button"
+              className="btn btn-primary btn-wide"
+              onClick={() => setSummary(null)}
+            >
+              Kapat
+            </button>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
