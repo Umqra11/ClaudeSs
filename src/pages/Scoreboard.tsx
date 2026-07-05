@@ -39,6 +39,7 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
   const [reactText, setReactText] = useState('')
   const [, setTick] = useState(0)
   const [champBanner, setChampBanner] = useState(false)
+  const [liveLeaderDismissed, setLiveLeaderDismissed] = useState(false)
   const confirmTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Aynı hafta için ödülün iki kez yazılmasını engelleyen guard
   const awardedWeekRef = useRef<string | null>(null)
@@ -171,6 +172,10 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
     })
     .sort((a, b) => b.liveSec - a.liveSec)
 
+  // Anlık lider: bu haftaki canlı sıralamada 1. sıradaki (süresi > 0 olan)
+  const leader = rows.length > 0 && rows[0].liveSec > 0 ? rows[0] : null
+  const isLiveLeader = leader?.uid === user.uid
+
   return (
     <main className="page board-page">
       <header className="board-header">
@@ -184,7 +189,7 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
         </div>
       </header>
 
-      {champBanner && (
+      {champBanner ? (
         <div className="champ-banner" role="status">
           <span className="champ-banner-text">
             🏆 Bravo! Bu haftanın şampiyonu sensin!
@@ -198,6 +203,23 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
             ✕
           </button>
         </div>
+      ) : (
+        isLiveLeader &&
+        !liveLeaderDismissed && (
+          <div className="champ-banner champ-banner-live" role="status">
+            <span className="champ-banner-text">
+              🔥 Şu an bu haftanın lidersin! Zirveyi koru 👑
+            </span>
+            <button
+              type="button"
+              className="champ-banner-close"
+              onClick={() => setLiveLeaderDismissed(true)}
+              aria-label="Kapat"
+            >
+              ✕
+            </button>
+          </div>
+        )
       )}
 
       <div className="board-list">
@@ -220,6 +242,15 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
               </span>
               <span className="board-member">
                 <span className="board-name">
+                  {i === 0 && m.liveSec > 0 && (
+                    <span
+                      className="board-crown"
+                      title="Bu haftanın lideri"
+                      aria-label="lider"
+                    >
+                      👑{' '}
+                    </span>
+                  )}
                   {m.name}
                   {m.uid === user.uid && (
                     <span className="board-you"> (sen)</span>

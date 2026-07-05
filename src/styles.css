@@ -879,6 +879,16 @@ button {
   letter-spacing: -0.01em;
 }
 
+/* Anlık lider (bu haftaki canlı 1.) — kalıcı şampiyonluktan ayrı, sıcak ton */
+.champ-banner-live {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+.board-crown {
+  flex-shrink: 0;
+}
+
 .champ-banner-close {
   flex-shrink: 0;
   width: 28px;
