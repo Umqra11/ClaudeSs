@@ -51,6 +51,10 @@ function mapUserDoc(uid: string, d: any): UserProfile {
     days: d.days ?? {},
     allTimeSec: d.allTimeSec ?? 0,
     lastSeenAt: d.lastSeenAt instanceof Timestamp ? d.lastSeenAt.toMillis() : null,
+    championshipCount: d.championshipCount ?? 0,
+    lastChampionWeekId: d.lastChampionWeekId ?? null,
+    prevWeekId: d.prevWeekId ?? null,
+    prevWeekTotalSec: d.prevWeekTotalSec ?? 0,
   }
 }
 
@@ -107,6 +111,10 @@ class FirebaseBackend implements Backend {
       days: {},
       allTimeSec: 0,
       lastSeenAt: null, // henüz çalışma girdisi yok
+      championshipCount: 0,
+      lastChampionWeekId: null,
+      prevWeekId: null,
+      prevWeekTotalSec: 0,
       updatedAt: serverTimestamp(),
     })
     return emptyProfile(uid, name)

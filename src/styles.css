@@ -398,6 +398,164 @@ button {
   }
 }
 
+/* ---------- Seans özeti pop-up (Durdur) ---------- */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-5);
+  background: rgba(15, 22, 20, 0.55);
+  animation: backdrop-in 0.18s ease forwards;
+}
+
+.summary-card {
+  width: 100%;
+  max-width: 380px;
+  max-height: calc(100vh - 2 * var(--space-5));
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border-radius: var(--radius);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: 0 12px 40px rgba(10, 16, 14, 0.28);
+  animation: summary-in 0.2s ease forwards;
+}
+
+.summary-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+
+.summary-sub {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+}
+
+.summary-new {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+}
+
+.summary-new-title {
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.summary-badge {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.summary-badge-emoji {
+  font-size: 1.5rem;
+  line-height: 1.2;
+  flex-shrink: 0;
+}
+
+.summary-badge-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.summary-badge-name {
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.summary-badge-msg {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.summary-collection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.summary-collection-title {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.summary-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.summary-chip {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.summary-chip-new {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.summary-empty {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9375rem;
+}
+
+.summary-next {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+@keyframes backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes summary-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop,
+  .summary-card {
+    animation: none;
+  }
+}
+
 /* ---------- Butonlar ---------- */
 
 .btn {
@@ -692,6 +850,62 @@ button {
 .board-last-seen {
   font-size: 0.6875rem;
   color: var(--text-muted);
+}
+
+.board-champ {
+  margin-left: var(--space-2);
+  font-weight: 600;
+  font-size: 0.75rem;
+  color: var(--accent);
+  white-space: nowrap;
+}
+
+/* Haftanın şampiyonu karşılama afişi */
+.champ-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-sm);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  color: var(--text);
+}
+
+.champ-banner-text {
+  flex: 1;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+/* Anlık lider (bu haftaki canlı 1.) — kalıcı şampiyonluktan ayrı, sıcak ton */
+.champ-banner-live {
+  background: var(--danger-soft);
+  border-color: var(--danger);
+}
+
+.board-crown {
+  flex-shrink: 0;
+}
+
+.champ-banner-close {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.champ-banner-close:hover {
+  background: var(--surface);
+  color: var(--text);
 }
 
 .board-time {
