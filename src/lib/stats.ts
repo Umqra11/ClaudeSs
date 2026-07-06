@@ -9,7 +9,7 @@
 // ============================================================
 
 import type { UserProfile } from '../services/db'
-import { getDayId, splitIntervalByDay } from './week'
+import { splitIntervalByDay } from './week'
 
 interface Stats {
   uid: string
@@ -34,43 +34,15 @@ export function getStats(user: UserProfile): Stats {
 export interface SessionLike {
   status?: string
   startedAt?: number | null // koşan parçanın başlangıcı
-  accumulatedSec?: number // duraklamalarda biriken süre
-  lastAccumAt?: number | null // son birikimin anı
-  sessionStartMs?: number | null // seansın ilk başlama anı
 }
 
 /**
- * Bir seansın süresini Istanbul günlerine dağıtır (gece 00:00'da
- * otomatik bölme): koşan parça (startedAt→now) gün sınırlarında TAM
- * bölünür; duraklamalarda biriken süre, son birikim anının (yoksa seans
- * başlangıcının) gününe yazılır. → { '2026-07-03': sn, ... }
- */
-export function computeSessionDays(
-  s: SessionLike,
-  now: number,
-): Record<string, number> {
-  const perDay: Record<string, number> = {}
-  const add = (dayId: string, sec: number) => {
-    if (sec > 0) perDay[dayId] = (perDay[dayId] ?? 0) + sec
-  }
-
-  if (s.status === 'running' && s.startedAt) {
-    for (const part of splitIntervalByDay(s.startedAt, now)) {
-      add(part.dayId, part.sec)
-    }
-  }
-
-  const accum = s.accumulatedSec ?? 0
-  if (accum > 0) {
-    const anchor = s.lastAccumAt ?? s.sessionStartMs ?? now
-    add(getDayId(new Date(anchor)), accum)
-  }
-  return perDay
-}
-
-/**
- * Aktif (koşan/duraklatılmış) seansın gün-bazlı canlı dağılımı.
+ * Aktif (yalnızca HÂLÂ KOŞAN) seansın gün-bazlı canlı dağılımı.
  * localStorage 'kpss.timer' kaydını okur; yoksa/başkasınınsa boş.
+ *
+ * Duraklatılmış bir seansın süresi buraya DAHİL EDİLMEZ: useTimer'ın
+ * pause()'u, duraklatılan parçayı ANINDA kalıcı `days`'e işliyor (bkz.
+ * settleSegment) — burada da sayılırsa çift sayım olurdu.
  */
 export function activeSessionByDay(
   uid: string,
@@ -81,8 +53,12 @@ export function activeSessionByDay(
     if (!raw) return {}
     const t = JSON.parse(raw) as SessionLike & { uid?: string }
     if (t.uid !== uid) return {}
-    if (t.status !== 'running' && t.status !== 'paused') return {}
-    return computeSessionDays(t, now)
+    if (t.status !== 'running' || !t.startedAt) return {}
+    const perDay: Record<string, number> = {}
+    for (const { dayId, sec } of splitIntervalByDay(t.startedAt, now)) {
+      perDay[dayId] = (perDay[dayId] ?? 0) + sec
+    }
+    return perDay
   } catch {
     return {}
   }
