@@ -162,7 +162,7 @@ export function useTimer(user: UserProfile) {
       const s = stateRef.current
       const sec = Math.floor(
         s.accumulatedSec +
-          (s.startedAt ? (Date.now() - s.startedAt) / 1000 : 0),
+        (s.startedAt ? (Date.now() - s.startedAt) / 1000 : 0),
       )
       document.title = `${formatClock(sec)} · KPSS`
     }
@@ -210,9 +210,30 @@ export function useTimer(user: UserProfile) {
       }
       const dayStats = recordSessionDays(user, perDay)
 
+      const segments = splitIntervalByWeek(startMs, endMs)
       let w = weekRef.current
+
+      // Hafta sınırı aşıldığında eski haftanın birikmiş süresini
+      // weekRef'ten (yeni hafta totalSec=0 olabilir) değil, user
+      // profilinden al. Aksi halde prevWeekTotalSec eksik yazılır
+      // ve haftalık süre kaybolur (Salı 00:00 sıfırlamasıyla tetiklenir).
+      if (
+        segments.length > 0 &&
+        w.weekId !== segments[0].weekId
+      ) {
+        // Segment eski haftada başlıyor ama weekRef yeni haftada
+        const oldWeekId = segments[0].weekId
+        let oldWeekBalance = 0
+        if (user.weekId === oldWeekId) {
+          oldWeekBalance = user.weekTotalSec
+        } else if (user.prevWeekId === oldWeekId) {
+          oldWeekBalance = user.prevWeekTotalSec
+        }
+        w = { weekId: oldWeekId, totalSec: oldWeekBalance }
+      }
+
       const rollover: { prevWeekId?: string; prevWeekTotalSec?: number } = {}
-      for (const { weekId, sec } of splitIntervalByWeek(startMs, endMs)) {
+      for (const { weekId, sec } of segments) {
         if (w.weekId !== weekId) {
           // Segment hafta sınırını kestiyse: eski hafta doluysa şampiyon
           // tespiti için snapshot'la, yeni haftadan sıfırla devam et.
@@ -250,7 +271,7 @@ export function useTimer(user: UserProfile) {
             prevWeekId: user.weekId,
             prevWeekTotalSec: user.weekTotalSec,
           })
-          .catch(() => {})
+          .catch(() => { })
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -364,10 +385,10 @@ export function useTimer(user: UserProfile) {
       weekTotalSec: Math.round(w.totalSec),
       ...(settled
         ? {
-            days: settled.days,
-            allTimeSec: Math.round(settled.allTimeSec),
-            ...settled.rollover,
-          }
+          days: settled.days,
+          allTimeSec: Math.round(settled.allTimeSec),
+          ...settled.rollover,
+        }
         : {}),
       // "Son görülme" = son çalışma girdisi (kronometrenin durdurulduğu an).
       lastSeenAt: now,
