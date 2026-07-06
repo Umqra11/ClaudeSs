@@ -22,6 +22,7 @@ const STATE_LABELS: Record<string, string> = {
 interface StopSummary {
   sessionSec: number
   weekSec: number
+  todaySec: number
   earned: Milestone[]
   newly: Milestone[]
   next: Milestone | null
@@ -33,6 +34,7 @@ export default function Timer({ user }: TimerProps) {
     elapsedSec,
     weekTotalSec,
     weekWithActiveSec,
+    todayWithActiveSec,
     start,
     pause,
     resume,
@@ -47,12 +49,14 @@ export default function Timer({ user }: TimerProps) {
   function handleStop() {
     const before = weekTotalSec // aktif seans hariç, seans öncesi haftalık toplam
     const finalWeek = weekWithActiveSec // seans dahil, bu haftaki nihai toplam
+    const finalToday = todayWithActiveSec // seans dahil, bugünkü nihai toplam
     const earned = earnedMilestones(finalWeek)
     const newly = earned.filter((m) => m.sec > before) // bu seansta yeni aşılanlar
     stop()
     setSummary({
       sessionSec: elapsedSec,
       weekSec: finalWeek,
+      todaySec: finalToday,
       earned,
       newly,
       next: nextMilestone(finalWeek),
@@ -118,6 +122,8 @@ export default function Timer({ user }: TimerProps) {
 
       <footer className="timer-footer">
         <div className="week-total">
+          Bugün: <strong>{formatWeekTotal(todayWithActiveSec)}</strong>
+          <span aria-hidden="true"> · </span>
           Bu hafta: <strong>{formatWeekTotal(weekWithActiveSec)}</strong>
         </div>
         <p className="reset-note">Salı 00:00'da sıfırlanır</p>
@@ -135,6 +141,8 @@ export default function Timer({ user }: TimerProps) {
             <h2 className="summary-title">Seansı bitirdin 👏</h2>
             <p className="summary-sub">
               Bu seans <strong>{formatWeekTotal(summary.sessionSec)}</strong>
+              <span aria-hidden="true"> · </span>
+              Bugün toplam <strong>{formatWeekTotal(summary.todaySec)}</strong>
               <span aria-hidden="true"> · </span>
               Bu hafta toplam <strong>{formatWeekTotal(summary.weekSec)}</strong>
             </p>

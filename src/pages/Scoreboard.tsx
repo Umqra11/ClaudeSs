@@ -162,7 +162,11 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
           : 0
       return {
         ...m,
-        liveSec: Math.max(0, Math.floor(base + m.sessionAccumulatedSec + running)),
+        // NOT sessionAccumulatedSec: weekTotalSec artık her duraklatmada
+        // (settleSegment ile) güncel tutuluyor; ayrıca eklemek çift sayım
+        // olurdu. sessionAccumulatedSec yalnızca çapraz-cihaz devralma için
+        // senkronize edilmeye devam eder, burada kullanılmaz.
+        liveSec: Math.max(0, Math.floor(base + running)),
         // Bu üyeye gelen aktif tepkilerin son 2'si
         bubbles: activeReactions.filter((r) => r.toUid === m.uid).slice(-2),
         // Çalışmıyorsa (duraklatılmış veya durdurulmuş) WhatsApp tarzı "son
