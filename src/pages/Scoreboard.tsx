@@ -2,15 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import { useRoom } from '../hooks/useRoom'
 import { formatClock, formatLastSeen, formatTimeOfDay } from '../lib/format'
 import { getWeekId, previousWeekId } from '../lib/week'
+import { weekTotalFromDays } from '../lib/stats'
 import { db, REACTION_MAX_LEN, type UserProfile } from '../services/db'
 
-/** Bir üyenin tamamlanmış (verilen) haftadaki toplam süresi. Üye verisini
- *  yeni haftaya taşımışsa snapshot'tan (prevWeek*), taşımamışsa güncel
- *  alandan okur — böylece kim önce açarsa açsın sonuç aynı (yarış-bağımsız). */
+/** Bir üyenin verilen haftadaki toplam süresi — üyenin `days` (günlük
+ *  geçmiş) verisinden TÜRETİLİR. days monotonik olduğundan bu değer düşmez;
+ *  bayat `weekTotalSec` alanına ya da `prevWeek*` snapshot'ına bağımlı
+ *  değildir (o alanların çapraz-cihaz bozulması artık zararsız). */
 function completedWeekTotal(m: UserProfile, weekId: string): number {
-  if (m.weekId === weekId) return m.weekTotalSec
-  if (m.prevWeekId === weekId) return m.prevWeekTotalSec
-  return 0
+  return weekTotalFromDays(m.days, weekId)
 }
 
 interface ScoreboardProps {
@@ -154,8 +154,10 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
 
   const rows = members
     .map((m) => {
-      // weekId güncel hafta değilse toplam 0 sayılır (Salı sıfırlaması)
-      const base = m.weekId === currentWeekId ? m.weekTotalSec : 0
+      // Haftalık taban üyenin `days`'inden TÜRETİLİR (monotonik, düşmez;
+      // bayat weekTotalSec alanına bağımsız). Salı sıfırlaması otomatik:
+      // yeni haftada henüz gün yoktur.
+      const base = weekTotalFromDays(m.days, currentWeekId)
       const running =
         m.isStudying && m.sessionStartedAt
           ? (now - m.sessionStartedAt) / 1000
