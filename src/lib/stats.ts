@@ -9,7 +9,7 @@
 // ============================================================
 
 import type { UserProfile } from '../services/db'
-import { splitIntervalByDay } from './week'
+import { getWeekId, splitIntervalByDay } from './week'
 
 interface Stats {
   uid: string
@@ -28,6 +28,26 @@ export function getStats(user: UserProfile): Stats {
     allTimeSec: user.allTimeSec ?? 0,
   }
   return cache
+}
+
+/**
+ * Verilen haftaya (Salı 00:00 → ertesi Salı 00:00) düşen günlerin toplamı.
+ * `days` (günlük geçmiş) yalnızca artan (monotonik) bir kaynaktır; haftalık
+ * toplamı buradan TÜRETMEK, ayrı/bayat/kör-yazılan bir weekTotalSec alanına
+ * güvenmekten yapısal olarak daha güvenlidir — hiçbir şekilde düşmez ve
+ * hafta devrinde otomatik sıfırlanır (yeni haftada henüz gün yoktur).
+ * Her gün tam olarak tek bir haftaya aittir (haftalar gün-hizalı).
+ */
+export function weekTotalFromDays(
+  days: Record<string, number> | undefined,
+  weekId: string = getWeekId(),
+): number {
+  let sum = 0
+  for (const [dayId, sec] of Object.entries(days ?? {})) {
+    // Öğle (12:00 +03:00) — TZ-güvenli; günün hangi haftaya düştüğünü verir.
+    if (getWeekId(new Date(`${dayId}T12:00:00+03:00`)) === weekId) sum += sec
+  }
+  return Math.floor(sum)
 }
 
 /** useTimer'ın sakladığı seans durumu (kpss.timer ile aynı biçim). */

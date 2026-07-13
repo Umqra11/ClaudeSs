@@ -8,16 +8,19 @@
 // Sekme arka plana geçse, tarayıcı kapansa, telefon yeniden
 // başlasa bile süre doğru işler.
 //
-// Kalıcılık: her durum değişikliği localStorage'a; başlat /
-// duraklat / devam / durdur anlarında + running iken 60 sn'de bir
-// heartbeat olarak db.updateUser ile backend'e yazılır.
+// Kalıcılık: her KOŞAN PARÇA (segment) bittiği anda (duraklat/durdur)
+// gün bazında `days`'e işlenir (settleSegment). Haftalık toplam AYRI bir
+// alandan izlenmez; `days`'ten TÜRETİLİR (weekTotalFromDays) — monotonik,
+// bayat "kör overwrite"a ve yanlış sıfırlamaya karşı yapısal olarak
+// güvenli. Firestore'daki weekTotalSec yalnızca days-türevi bir aynadır
+// (eski istemciler okusun diye yazılır; otoriter değildir).
 // ============================================================
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { db, type UserProfile } from '../services/db'
-import { getDayId, getWeekId, splitIntervalByDay, splitIntervalByWeek } from '../lib/week'
+import { getDayId, getWeekId, splitIntervalByDay } from '../lib/week'
 import { formatClock } from '../lib/format'
-import { getStats, recordSessionDays } from '../lib/stats'
+import { getStats, recordSessionDays, weekTotalFromDays } from '../lib/stats'
 import {
   clearStudyNotification,
   ensureStudyPermission,
@@ -30,18 +33,13 @@ interface TimerState {
   status: TimerStatus
   startedAt: number | null // koşan parçanın başlangıcı (epoch ms)
   accumulatedSec: number // önceki parçalarda biriken süre — YALNIZCA
-  // büyük saatin kümülatif GÖRÜNÜMÜ içindir; gün/hafta kalıcılığı artık
+  // büyük saatin kümülatif GÖRÜNÜMÜ içindir; gün/hafta kalıcılığı
   // settleSegment ile parça bittiği anda (pause/stop) ayrıca yapılıyor.
   sessionStartMs: number | null // seansın ilk başlama anı
 }
 
 interface PersistedTimer extends TimerState {
   uid: string
-}
-
-interface WeekTotal {
-  weekId: string
-  totalSec: number
 }
 
 const TIMER_KEY = 'kpss.timer'
@@ -52,10 +50,6 @@ const IDLE: TimerState = {
   accumulatedSec: 0,
   sessionStartMs: null,
 }
-
-// Sekme değişiminde (Timer bileşeni sökülüp yeniden kurulduğunda)
-// haftalık toplamın bayat profil verisine dönmemesi için oturum içi önbellek.
-let weekCache: (WeekTotal & { uid: string }) | null = null
 
 /** Açılışta aktif seansı devral: önce localStorage, yoksa backend profili. */
 function loadInitialState(user: UserProfile): TimerState {
@@ -98,32 +92,12 @@ function loadInitialState(user: UserProfile): TimerState {
   return IDLE
 }
 
-function loadInitialWeek(user: UserProfile): WeekTotal {
-  const weekId = getWeekId()
-  if (weekCache && weekCache.uid === user.uid && weekCache.weekId === weekId) {
-    return { weekId, totalSec: weekCache.totalSec }
-  }
-  // weekId eskiyse haftalık toplam 0'dan başlar (Salı 00:00 otomatik sıfırlama)
-  return { weekId, totalSec: user.weekId === weekId ? user.weekTotalSec : 0 }
-}
-
 export function useTimer(user: UserProfile) {
   const [state, setState] = useState<TimerState>(() => loadInitialState(user))
-  const [week, setWeekState] = useState<WeekTotal>(() => loadInitialWeek(user))
   const [, setTick] = useState(0)
 
   const stateRef = useRef(state)
   stateRef.current = state
-  const weekRef = useRef(week)
-  weekRef.current = week
-
-  const setWeek = useCallback(
-    (w: WeekTotal) => {
-      weekCache = { uid: user.uid, ...w }
-      setWeekState(w)
-    },
-    [user.uid],
-  )
 
   // Her durum değişikliğini localStorage'a yaz
   useEffect(() => {
@@ -162,7 +136,7 @@ export function useTimer(user: UserProfile) {
       const s = stateRef.current
       const sec = Math.floor(
         s.accumulatedSec +
-        (s.startedAt ? (Date.now() - s.startedAt) / 1000 : 0),
+          (s.startedAt ? (Date.now() - s.startedAt) / 1000 : 0),
       )
       document.title = `${formatClock(sec)} · KPSS`
     }
@@ -174,116 +148,46 @@ export function useTimer(user: UserProfile) {
     }
   }, [state.status])
 
+  // Session alanları + weekId + weekTotalSec (days'ten TÜREVİ) yazar.
+  // Artık bayat weekRef değil, days-türevi yazılır: hiçbir zaman gerçek
+  // days toplamının altına düşmez ve yeni haftada gün yoksa doğal 0 olur.
   const syncBackend = useCallback(
-    (
-      s: TimerState,
-      w: WeekTotal,
-      // Ek alanlar (ör. lastSeenAt) — AYNI yazımda gitmeli. Yerel modda
-      // updateUser oku-değiştir-yaz olduğu için ikinci ayrı bir çağrı,
-      // bayat veriyle sessionAccumulatedSec'i sıfırlayıp yarışırdı.
-      extra?: { lastSeenAt?: number | null },
-    ) => {
+    (s: TimerState, extra?: { lastSeenAt?: number | null }) => {
       db.updateUser(user.uid, {
         isStudying: s.status === 'running',
         sessionStartedAt: s.startedAt,
         sessionAccumulatedSec: Math.round(s.accumulatedSec),
-        weekId: w.weekId,
-        weekTotalSec: Math.round(w.totalSec),
+        weekId: getWeekId(),
+        weekTotalSec: weekTotalFromDays(getStats(user).days),
         ...extra,
       }).catch(() => {
         /* çevrimdışı vb. — localStorage zaten güncel */
       })
     },
-    [user.uid],
+    [user],
   )
 
-  // Bir [startMs, endMs] koşan SEGMENTİNİ gün VE hafta bazında doğru
-  // şekilde kalıcı istatistiklere işler (DB'ye YAZMAZ — çağıran yazar).
-  // pause() ve stop() bunu ORTAK kullanır ki bir segment TAM OLARAK BİR
-  // KEZ ayarlansın: pause segmenti kapatırsa (startedAt=null) stop artık
-  // ona dokunmaz — duplicate yapısal olarak imkansız.
+  // Bir [startMs, endMs] koşan SEGMENTİNİ gün bazında doğru bölüp kalıcı
+  // istatistiklere işler (DB'ye YAZMAZ — çağıran yazar). pause() ve stop()
+  // bunu ORTAK kullanır ki bir segment TAM OLARAK BİR KEZ ayarlansın:
+  // pause segmenti kapatırsa (startedAt=null) stop artık ona dokunmaz —
+  // duplicate yapısal olarak imkansız. Haftalık toplam days'ten türediği
+  // için burada hafta mantığı gerekmez.
   const settleSegment = useCallback(
     (startMs: number, endMs: number) => {
       const perDay: Record<string, number> = {}
       for (const { dayId, sec } of splitIntervalByDay(startMs, endMs)) {
         perDay[dayId] = (perDay[dayId] ?? 0) + sec
       }
-      const dayStats = recordSessionDays(user, perDay)
-
-      const segments = splitIntervalByWeek(startMs, endMs)
-      let w = weekRef.current
-
-      // Hafta sınırı aşıldığında eski haftanın birikmiş süresini
-      // weekRef'ten (yeni hafta totalSec=0 olabilir) değil, user
-      // profilinden al. Aksi halde prevWeekTotalSec eksik yazılır
-      // ve haftalık süre kaybolur (Salı 00:00 sıfırlamasıyla tetiklenir).
-      if (
-        segments.length > 0 &&
-        w.weekId !== segments[0].weekId
-      ) {
-        // Segment eski haftada başlıyor ama weekRef yeni haftada
-        const oldWeekId = segments[0].weekId
-        let oldWeekBalance = 0
-        if (user.weekId === oldWeekId) {
-          oldWeekBalance = user.weekTotalSec
-        } else if (user.prevWeekId === oldWeekId) {
-          oldWeekBalance = user.prevWeekTotalSec
-        }
-        w = { weekId: oldWeekId, totalSec: oldWeekBalance }
-      }
-
-      const rollover: { prevWeekId?: string; prevWeekTotalSec?: number } = {}
-      for (const { weekId, sec } of segments) {
-        if (w.weekId !== weekId) {
-          // Segment hafta sınırını kestiyse: eski hafta doluysa şampiyon
-          // tespiti için snapshot'la, yeni haftadan sıfırla devam et.
-          if (w.weekId && w.totalSec > 0) {
-            rollover.prevWeekId = w.weekId
-            rollover.prevWeekTotalSec = Math.round(w.totalSec)
-          }
-          w = { weekId, totalSec: 0 }
-        }
-        w = { weekId: w.weekId, totalSec: w.totalSec + sec }
-      }
-
-      return {
-        days: dayStats.days,
-        allTimeSec: dayStats.allTimeSec,
-        week: w,
-        rollover,
-      }
+      return recordSessionDays(user, perDay) // { uid, days, allTimeSec }
     },
     [user],
   )
 
-  // Açılışta hafta devri olduysa backend'i hizala
-  const didInit = useRef(false)
-  useEffect(() => {
-    if (didInit.current) return
-    didInit.current = true
-    if (user.weekId !== weekRef.current.weekId) {
-      syncBackend(stateRef.current, weekRef.current)
-      // Hafta devri: weekTotalSec syncBackend ile 0'a çekilmeden önce geçen
-      // haftayı snapshot'la — haftalık şampiyon tespiti bunu okur.
-      if (user.weekId && user.weekTotalSec > 0) {
-        void db
-          .updateUser(user.uid, {
-            prevWeekId: user.weekId,
-            prevWeekTotalSec: user.weekTotalSec,
-          })
-          .catch(() => { })
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-
   // Running iken 60 sn'de bir heartbeat
   useEffect(() => {
     if (state.status !== 'running') return
-    const id = setInterval(
-      () => syncBackend(stateRef.current, weekRef.current),
-      60_000,
-    )
+    const id = setInterval(() => syncBackend(stateRef.current), 60_000)
     return () => clearInterval(id)
   }, [state.status, syncBackend])
 
@@ -297,11 +201,10 @@ export function useTimer(user: UserProfile) {
       sessionStartMs: now,
     }
     setState(s)
-    // "Son görülme" yalnızca DURDURMA saatini göstermeli: yeni seans
-    // başlarken varsa bayat (önceki sürümden kalma) değeri temizle. Seans
-    // sürerken zaten gizli; Durdur'da gerçek durdurma saati yazılır. Aynı
-    // yazımda gider (ayrı çağrı yerel modda yarışırdı).
-    syncBackend(s, weekRef.current, { lastSeenAt: null })
+    // "Son görülme" yalnızca DURDURMA/DURAKLATMA saatini göstermeli: yeni
+    // seans başlarken varsa bayat değeri temizle. Aynı yazımda gider (ayrı
+    // çağrı yerel modda yarışırdı).
+    syncBackend(s, { lastSeenAt: null })
     // Kullanıcı hareketi: izin iste, sonra bildirimi göster
     void ensureStudyPermission().then((ok) => {
       if (ok) void showStudyNotification(now)
@@ -316,35 +219,33 @@ export function useTimer(user: UserProfile) {
       ...prev,
       status: 'paused',
       startedAt: null,
-      // Büyük saatin kümülatif GÖRÜNÜMÜ için — kalıcı gün/hafta verisi
-      // aşağıda settleSegment ile AYRI ve DOĞRU şekilde işleniyor.
+      // Büyük saatin kümülatif GÖRÜNÜMÜ için — kalıcı gün verisi aşağıda
+      // settleSegment ile AYRI ve DOĞRU şekilde işleniyor.
       accumulatedSec: prev.accumulatedSec + (now - prev.startedAt) / 1000,
     }
     setState(s)
 
-    // Az önce biten segmenti [prev.startedAt, now] gün+hafta bazında
-    // AYARLA ve kalıcı yaz. Durdur ile ÇAKIŞMAZ: bu segment burada
-    // kapatıldığı (startedAt=null) için stop() bir daha ayarlamaz.
+    // Az önce biten segmenti [prev.startedAt, now] gün bazında AYARLA ve
+    // kalıcı yaz. Durdur ile ÇAKIŞMAZ: bu segment burada kapatıldığı
+    // (startedAt=null) için stop() bir daha ayarlamaz. Tek yazım (yerel-mod
+    // yarışına karşı). weekTotalSec days'ten türetilir.
     const settled = settleSegment(prev.startedAt, now)
-    setWeek(settled.week)
     db.updateUser(user.uid, {
       isStudying: false,
       sessionStartedAt: null,
-      // Yalnızca GÖRÜNTÜ / çapraz-cihaz devralma amaçlı — liderlik
-      // hesabı artık bunu eklemiyor (weekTotalSec zaten güncel).
+      // Yalnızca GÖRÜNTÜ / çapraz-cihaz devralma amaçlı.
       sessionAccumulatedSec: Math.round(s.accumulatedSec),
-      weekId: settled.week.weekId,
-      weekTotalSec: Math.round(settled.week.totalSec),
+      weekId: getWeekId(),
+      weekTotalSec: weekTotalFromDays(settled.days),
       days: settled.days,
       allTimeSec: Math.round(settled.allTimeSec),
       // "Son görülme" = son etkinlik anı (duraklatma saati).
       lastSeenAt: now,
-      ...settled.rollover,
     }).catch(() => {
       /* çevrimdışı vb. — localStorage zaten güncel */
     })
     void clearStudyNotification()
-  }, [settleSegment, setWeek, user.uid])
+  }, [settleSegment, user.uid])
 
   const resume = useCallback(() => {
     const prev = stateRef.current
@@ -357,7 +258,7 @@ export function useTimer(user: UserProfile) {
       sessionStartMs: prev.sessionStartMs ?? now,
     }
     setState(s)
-    syncBackend(s, weekRef.current)
+    syncBackend(s)
     void showStudyNotification(s.sessionStartMs ?? now)
   }, [syncBackend])
 
@@ -373,22 +274,18 @@ export function useTimer(user: UserProfile) {
       prev.status === 'running' && prev.startedAt
         ? settleSegment(prev.startedAt, now)
         : null
-    const w = settled ? settled.week : weekRef.current
 
-    setWeek(w)
     setState(IDLE)
     db.updateUser(user.uid, {
       isStudying: false,
       sessionStartedAt: null,
       sessionAccumulatedSec: 0,
-      weekId: w.weekId,
-      weekTotalSec: Math.round(w.totalSec),
+      weekId: getWeekId(),
+      weekTotalSec: weekTotalFromDays(
+        settled ? settled.days : getStats(user).days,
+      ),
       ...(settled
-        ? {
-          days: settled.days,
-          allTimeSec: Math.round(settled.allTimeSec),
-          ...settled.rollover,
-        }
+        ? { days: settled.days, allTimeSec: Math.round(settled.allTimeSec) }
         : {}),
       // "Son görülme" = son çalışma girdisi (kronometrenin durdurulduğu an).
       lastSeenAt: now,
@@ -396,7 +293,7 @@ export function useTimer(user: UserProfile) {
       /* çevrimdışı vb. — localStorage zaten güncel */
     })
     void clearStudyNotification()
-  }, [settleSegment, setWeek, user.uid])
+  }, [settleSegment, user.uid])
 
   // Görünen değerler — her render'da zaman damgasından hesaplanır
   const now = Date.now()
@@ -404,26 +301,25 @@ export function useTimer(user: UserProfile) {
     state.status === 'running' && state.startedAt
       ? (now - state.startedAt) / 1000
       : 0
-  // Büyük saat: çoklu duraklatma boyunca KÜMÜLATİF görünüm — davranış
-  // değişmedi.
+  // Büyük saat: çoklu duraklatma boyunca KÜMÜLATİF görünüm — değişmedi.
   const elapsedSec = Math.floor(state.accumulatedSec + runningLegSec)
 
-  const weekBaseSec = week.weekId === getWeekId() ? week.totalSec : 0
-  // NOT elapsedSec: week her duraklatmada (settleSegment ile) güncel
-  // tutulduğundan önceki bacaklar zaten içinde — yalnızca HENÜZ
-  // ayarlanmamış koşan bacak eklenir, aksi halde çift sayılır.
-  const weekWithActiveSec = Math.floor(weekBaseSec) + Math.floor(runningLegSec)
+  // Haftalık/günlük taban days'ten TÜRETİLİR (monotonik, düşmez). days
+  // yalnızca settle'da değişir → useMemo ile her tick'te yeniden
+  // hesaplanmaz; koşan bacak ayrıca eklenir.
+  const days = getStats(user).days
+  const weekBaseSec = useMemo(() => weekTotalFromDays(days), [days])
+  const weekWithActiveSec = weekBaseSec + Math.floor(runningLegSec)
 
-  const todayId = getDayId()
-  const todayBaseSec = getStats(user).days[todayId] ?? 0
-  const todayWithActiveSec = Math.floor(todayBaseSec) + Math.floor(runningLegSec)
+  const todayBaseSec = Math.floor(days[getDayId()] ?? 0)
+  const todayWithActiveSec = todayBaseSec + Math.floor(runningLegSec)
 
   return {
     status: state.status,
     elapsedSec,
-    weekTotalSec: Math.floor(weekBaseSec),
+    weekTotalSec: weekBaseSec,
     weekWithActiveSec,
-    todayTotalSec: Math.floor(todayBaseSec),
+    todayTotalSec: todayBaseSec,
     todayWithActiveSec,
     start,
     pause,
