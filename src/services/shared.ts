@@ -40,7 +40,15 @@ export interface Room {
   createdAt: number // epoch ms
 }
 
-export type UserPatch = Partial<Omit<UserProfile, 'uid'>>
+export type UserPatch = Partial<Omit<UserProfile, 'uid'>> & {
+  /** Gün bazında ARTIMLI ekleme: { '2026-07-07': saniye }. Tam-map `days`
+   *  yazımı yerine kullanılır — backend mevcut değerin ÜZERİNE ekler
+   *  (Firestore'da dot-path + increment, yerel modda toplama). Böylece
+   *  bayat bir sekme/istemci diğerinin günlerini ezemez. */
+  daysIncrement?: Record<string, number>
+  /** allTimeSec'e artımlı ekleme (saniye) — aynı gerekçe. */
+  allTimeIncrementSec?: number
+}
 export type Unsubscribe = () => void
 
 export interface Backend {

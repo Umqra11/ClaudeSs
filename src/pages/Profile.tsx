@@ -242,11 +242,10 @@ export default function Profile({ user }: ProfileProps) {
   }
   activeThisWeekSec = Math.floor(activeThisWeekSec)
 
-  const weekRecordedSec =
-    user.weekId === currentWeekIdNow ? user.weekTotalSec : 0
-  const weekAdjustSec = Math.max(0, weekRecordedSec - daysThisWeekSec)
-  const displayAllTime = stats.allTimeSec + weekAdjustSec + activeSec
-  const displayThisWeek = daysThisWeekSec + weekAdjustSec + activeThisWeekSec
+  // Tümü days-türevi: weekTotalSec alanına (bayat/eski-bozuk-dönem verisi
+  // taşıyabilir) güvenilmez — Scoreboard ile bire bir tutarlı.
+  const displayAllTime = stats.allTimeSec + activeSec
+  const displayThisWeek = daysThisWeekSec + activeThisWeekSec
   const displayToday = todaySec + activeTodaySec
 
   // Grafik + günlük listede HER günün noktası kendi aktif payını içerir

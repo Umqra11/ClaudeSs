@@ -71,7 +71,11 @@ class LocalBackend implements Backend {
     this.roomListeners.forEach((emit) => emit())
   }
 
-  async resolveSession(): Promise<UserProfile | null> {
+  // Senkron okuma: localStorage zaten senkron. updateUser'ın oku-değiştir-yaz
+  // adımlarının arasına microtask boşluğu girmesin diye (iki eşzamanlı
+  // updateUser'ın aynı bayat snapshot'ı okuyup birbirini ezmesi riski)
+  // async resolveSession yerine bu kullanılır.
+  private readUserSync(): UserProfile | null {
     try {
       const raw = localStorage.getItem(LOCAL_KEY)
       if (!raw) return null
@@ -83,6 +87,10 @@ class LocalBackend implements Backend {
     }
   }
 
+  async resolveSession(): Promise<UserProfile | null> {
+    return this.readUserSync()
+  }
+
   async register(name: string): Promise<UserProfile> {
     const profile = emptyProfile(localUid(), name)
     localStorage.setItem(LOCAL_KEY, JSON.stringify(profile))
@@ -90,9 +98,24 @@ class LocalBackend implements Backend {
   }
 
   async updateUser(uid: string, patch: UserPatch): Promise<void> {
-    const current = await this.resolveSession()
+    const current = this.readUserSync()
     if (!current || current.uid !== uid) return
-    localStorage.setItem(LOCAL_KEY, JSON.stringify({ ...current, ...patch }))
+    const { daysIncrement, allTimeIncrementSec, ...rest } = patch
+    const next: UserProfile = { ...current, ...rest }
+    // Artımlı alanlar mevcut değerin ÜZERİNE eklenir (Firestore increment
+    // davranışının yerel karşılığı) — bayat kopya günleri ezemez.
+    if (daysIncrement) {
+      const days = { ...next.days }
+      for (const [dayId, sec] of Object.entries(daysIncrement)) {
+        const rounded = Math.round(sec)
+        if (rounded > 0) days[dayId] = (days[dayId] ?? 0) + rounded
+      }
+      next.days = days
+    }
+    if (allTimeIncrementSec && allTimeIncrementSec > 0) {
+      next.allTimeSec = (next.allTimeSec ?? 0) + Math.round(allTimeIncrementSec)
+    }
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(next))
     this.memberListeners.forEach((emit) => emit())
   }
 

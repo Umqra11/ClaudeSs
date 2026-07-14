@@ -144,32 +144,6 @@ export function splitIntervalByDay(
   return out
 }
 
-/**
- * Sürekli bir [startMs, endMs] aralığını hafta sınırlarında (Salı 00:00
- * Istanbul) böler. Hafta sınırını kesen bir koşan/duraklamış parça
- * böylece payını doğru haftaya ayırır (günlük `splitIntervalByDay`'in
- * hafta karşılığı). Dönen liste kronolojiktir; sıfır uzunluklu parçalar
- * atlanır.
- */
-export function splitIntervalByWeek(
-  startMs: number,
-  endMs: number,
-): { weekId: string; sec: number }[] {
-  const out: { weekId: string; sec: number }[] = []
-  if (!(endMs > startMs)) return out
-  let cursor = startMs
-  // Guard: bir seansın 2 yıldan uzun sürmesi beklenmez (~104 hafta)
-  for (let i = 0; i < 110 && cursor < endMs; i++) {
-    const weekId = getWeekId(new Date(cursor))
-    const nextBoundary = nextResetAt(new Date(cursor))
-    const sliceEnd = Math.min(endMs, nextBoundary)
-    const sec = (sliceEnd - cursor) / 1000
-    if (sec > 0) out.push({ weekId, sec })
-    cursor = sliceEnd
-  }
-  return out
-}
-
 /** Bir sonraki sıfırlanma anı (gelecek Salı 00:00 Istanbul) — UTC epoch ms. */
 export function nextResetAt(date: Date = new Date()): number {
   const start = weekStartMs(getWeekId(date))

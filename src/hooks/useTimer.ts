@@ -176,10 +176,16 @@ export function useTimer(user: UserProfile) {
   const settleSegment = useCallback(
     (startMs: number, endMs: number) => {
       const perDay: Record<string, number> = {}
+      let segSec = 0
       for (const { dayId, sec } of splitIntervalByDay(startMs, endMs)) {
         perDay[dayId] = (perDay[dayId] ?? 0) + sec
+        segSec += sec
       }
-      return recordSessionDays(user, perDay) // { uid, days, allTimeSec }
+      const stats = recordSessionDays(user, perDay) // { uid, days, allTimeSec }
+      // perDay/segSec: backend'e ARTIMLI yazım için (daysIncrement) —
+      // tam-map yazım bayat sekmelerin birbirinin günlerini ezmesine yol
+      // açıyordu; increment ile her sekmenin katkısı kayıpsız birleşir.
+      return { ...stats, perDay, segSec: Math.round(segSec) }
     },
     [user],
   )
@@ -237,8 +243,10 @@ export function useTimer(user: UserProfile) {
       sessionAccumulatedSec: Math.round(s.accumulatedSec),
       weekId: getWeekId(),
       weekTotalSec: weekTotalFromDays(settled.days),
-      days: settled.days,
-      allTimeSec: Math.round(settled.allTimeSec),
+      // ARTIMLI: yalnız bu segmentin payı eklenir (tam-map değil) —
+      // başka sekmenin/istemcinin günleri asla ezilmez.
+      daysIncrement: settled.perDay,
+      allTimeIncrementSec: settled.segSec,
       // "Son görülme" = son etkinlik anı (duraklatma saati).
       lastSeenAt: now,
     }).catch(() => {
@@ -285,7 +293,11 @@ export function useTimer(user: UserProfile) {
         settled ? settled.days : getStats(user).days,
       ),
       ...(settled
-        ? { days: settled.days, allTimeSec: Math.round(settled.allTimeSec) }
+        ? {
+            // ARTIMLI: yalnız bu segmentin payı (bkz. pause'daki not).
+            daysIncrement: settled.perDay,
+            allTimeIncrementSec: settled.segSec,
+          }
         : {}),
       // "Son görülme" = son çalışma girdisi (kronometrenin durdurulduğu an).
       lastSeenAt: now,
@@ -304,15 +316,34 @@ export function useTimer(user: UserProfile) {
   // Büyük saat: çoklu duraklatma boyunca KÜMÜLATİF görünüm — değişmedi.
   const elapsedSec = Math.floor(state.accumulatedSec + runningLegSec)
 
-  // Haftalık/günlük taban days'ten TÜRETİLİR (monotonik, düşmez). days
-  // yalnızca settle'da değişir → useMemo ile her tick'te yeniden
-  // hesaplanmaz; koşan bacak ayrıca eklenir.
-  const days = getStats(user).days
-  const weekBaseSec = useMemo(() => weekTotalFromDays(days), [days])
-  const weekWithActiveSec = weekBaseSec + Math.floor(runningLegSec)
+  // Koşan bacağın BUGÜNE/BU HAFTAYA düşen payı: gece yarısını veya Salı
+  // 00:00'ı kesen seansta tüm bacak değil, yalnız sınır sonrası pay
+  // eklenir (aksi halde "Bugün/Bu hafta" şişer ve milestone erken tetiklenir).
+  const todayId = getDayId()
+  const currentWeekId = getWeekId()
+  let runningTodaySec = 0
+  let runningWeekSec = 0
+  if (state.status === 'running' && state.startedAt) {
+    for (const { dayId, sec } of splitIntervalByDay(state.startedAt, now)) {
+      if (dayId === todayId) runningTodaySec += sec
+      if (getWeekId(new Date(`${dayId}T12:00:00+03:00`)) === currentWeekId) {
+        runningWeekSec += sec
+      }
+    }
+  }
 
-  const todayBaseSec = Math.floor(days[getDayId()] ?? 0)
-  const todayWithActiveSec = todayBaseSec + Math.floor(runningLegSec)
+  // Haftalık/günlük taban days'ten TÜRETİLİR (monotonik, düşmez). days
+  // yalnızca settle'da değişir; weekId bağımlılığı, uygulama açıkken
+  // Salı 00:00 geçilirse gösterimin yeni haftada sıfırlanmasını sağlar.
+  const days = getStats(user).days
+  const weekBaseSec = useMemo(
+    () => weekTotalFromDays(days, currentWeekId),
+    [days, currentWeekId],
+  )
+  const weekWithActiveSec = weekBaseSec + Math.floor(runningWeekSec)
+
+  const todayBaseSec = Math.floor(days[todayId] ?? 0)
+  const todayWithActiveSec = todayBaseSec + Math.floor(runningTodaySec)
 
   return {
     status: state.status,

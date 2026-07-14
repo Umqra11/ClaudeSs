@@ -40,6 +40,20 @@ export function useAuth() {
     }
   }, [])
 
+  // Kendi profiline CANLI abonelik: şampiyonluk sayısı gibi başka
+  // bileşenlerin (Scoreboard) yazdığı alanlar reload beklemeden tazelenir.
+  // Not: useTimer'ın seans/istatistik kaynağı kendi yerel cache'idir
+  // (getStats + kpss.timer); bu abonelik yalnızca GÖRÜNÜM tazeler,
+  // kronometre durumunu etkilemez.
+  const uid = user?.uid ?? null
+  useEffect(() => {
+    if (!uid) return
+    return db.subscribeMembers([uid], (members) => {
+      const fresh = members[0]
+      if (fresh && fresh.uid === uid) setUser(fresh)
+    })
+  }, [uid])
+
   const register = useCallback(async (name: string) => {
     const profile = await db.register(name)
     setUser(profile)
