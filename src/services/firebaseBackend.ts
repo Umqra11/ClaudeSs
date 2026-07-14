@@ -11,7 +11,6 @@ import {
   getDoc,
   getDocs,
   increment,
-  limit,
   onSnapshot,
   query,
   serverTimestamp,
@@ -284,15 +283,14 @@ class FirebaseBackend implements Backend {
     roomId: string,
     cb: (reactions: Reaction[]) => void,
   ): Unsubscribe {
-    // expireAt filtresi: süresi geçmiş tepkiler hiç indirilmesin (maliyet).
-    // limit: tek seferde en fazla 100 belge. NOT: roomId+expireAt composite
-    // index gerektirir — ilk çalıştırmada konsol hatasındaki linkten tek
-    // tıkla oluşturulur.
+    // Yalnızca roomId eşitliği: otomatik tek-alan index yeterlidir,
+    // composite index / konsol adımı GEREKTİRMEZ. Süresi geçenler görünüm
+    // katmanında süzülür; kalıcı temizlik Firebase Console'daki TTL
+    // politikasıyla (reactions.expireAt) yapılır — TTL aktifken koleksiyon
+    // zaten küçük kalır, ek sorgu filtresine gerek kalmaz.
     const q = query(
       collection(this.db, 'reactions'),
       where('roomId', '==', roomId),
-      where('expireAt', '>', Timestamp.now()),
-      limit(100),
     )
     return onSnapshot(q, (snaps) => {
       const list: Reaction[] = snaps.docs.map((s) => {
