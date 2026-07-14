@@ -9,14 +9,20 @@ interface WelcomeProps {
 export default function Welcome({ onSubmit }: WelcomeProps) {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
   const trimmed = name.trim().slice(0, MAX_NAME_LENGTH)
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault()
     if (!trimmed || busy) return
     setBusy(true)
+    setError('')
     try {
       await onSubmit(trimmed)
+    } catch {
+      // Kayıt başarısız (ağ/Firebase) — kullanıcı nedenini görsün,
+      // sessizce buton eski haline dönmesin.
+      setError('Başlanamadı — bağlantını kontrol edip tekrar dene.')
     } finally {
       setBusy(false)
     }
@@ -62,6 +68,7 @@ export default function Welcome({ onSubmit }: WelcomeProps) {
         >
           {busy ? 'Başlıyor…' : 'Başla'}
         </button>
+        {error && <p className="form-error">{error}</p>}
       </form>
     </main>
   )

@@ -6,9 +6,12 @@ import {
   arrayRemove,
   arrayUnion,
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
+  increment,
+  limit,
   onSnapshot,
   query,
   serverTimestamp,
@@ -121,19 +124,31 @@ class FirebaseBackend implements Backend {
   }
 
   async updateUser(uid: string, patch: UserPatch): Promise<void> {
+    const { daysIncrement, allTimeIncrementSec, ...rest } = patch
     const data: Record<string, unknown> = {
-      ...patch,
+      ...rest,
       updatedAt: serverTimestamp(),
     }
-    if ('sessionStartedAt' in patch) {
+    if ('sessionStartedAt' in rest) {
       data.sessionStartedAt =
-        patch.sessionStartedAt == null
+        rest.sessionStartedAt == null
           ? null
-          : Timestamp.fromMillis(patch.sessionStartedAt)
+          : Timestamp.fromMillis(rest.sessionStartedAt)
     }
-    if ('lastSeenAt' in patch) {
+    if ('lastSeenAt' in rest) {
       data.lastSeenAt =
-        patch.lastSeenAt == null ? null : Timestamp.fromMillis(patch.lastSeenAt)
+        rest.lastSeenAt == null ? null : Timestamp.fromMillis(rest.lastSeenAt)
+    }
+    // Artımlı yazımlar: dot-path + increment ile ALAN BAZINDA eklenir —
+    // bayat bir istemci kopyası diğer sekmenin/istemcinin günlerini ezemez.
+    if (daysIncrement) {
+      for (const [dayId, sec] of Object.entries(daysIncrement)) {
+        const rounded = Math.round(sec)
+        if (rounded > 0) data[`days.${dayId}`] = increment(rounded)
+      }
+    }
+    if (allTimeIncrementSec && allTimeIncrementSec > 0) {
+      data.allTimeSec = increment(Math.round(allTimeIncrementSec))
     }
     await updateDoc(doc(this.db, 'users', uid), data)
   }
@@ -192,10 +207,17 @@ class FirebaseBackend implements Backend {
   }
 
   async leaveRoom(uid: string, roomId: string): Promise<void> {
-    // Kritik yazım: oda belgesinden kendini çıkar (hata görünür kalmalı).
-    await updateDoc(doc(this.db, 'rooms', roomId), {
-      memberUids: arrayRemove(uid),
-    })
+    const roomRef = doc(this.db, 'rooms', roomId)
+    // Son üye ayrılıyorsa odayı tümden sil — boş/yetim odalar ve
+    // kullanılmış kodlar Firestore'da sonsuza dek birikmesin.
+    const snap = await getDoc(roomRef)
+    const members: string[] = snap.exists() ? (snap.data().memberUids ?? []) : []
+    if (members.length === 1 && members[0] === uid) {
+      await deleteDoc(roomRef)
+    } else {
+      // Kritik yazım: oda belgesinden kendini çıkar (hata görünür kalmalı).
+      await updateDoc(roomRef, { memberUids: arrayRemove(uid) })
+    }
     // roomIds temizliği arka planda — kullanıcı bekletilmez.
     void updateDoc(doc(this.db, 'users', uid), {
       roomIds: arrayRemove(roomId),
@@ -262,9 +284,15 @@ class FirebaseBackend implements Backend {
     roomId: string,
     cb: (reactions: Reaction[]) => void,
   ): Unsubscribe {
+    // expireAt filtresi: süresi geçmiş tepkiler hiç indirilmesin (maliyet).
+    // limit: tek seferde en fazla 100 belge. NOT: roomId+expireAt composite
+    // index gerektirir — ilk çalıştırmada konsol hatasındaki linkten tek
+    // tıkla oluşturulur.
     const q = query(
       collection(this.db, 'reactions'),
       where('roomId', '==', roomId),
+      where('expireAt', '>', Timestamp.now()),
+      limit(100),
     )
     return onSnapshot(q, (snaps) => {
       const list: Reaction[] = snaps.docs.map((s) => {

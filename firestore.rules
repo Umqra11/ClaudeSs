@@ -17,13 +17,48 @@ service cloud.firestore {
 
     // ---- Kullanıcı belgeleri ----
     match /users/{uid} {
+      // Alan/değer doğrulaması: kötü niyetli bir istemcinin kendi
+      // istatistiklerini saçma değerlere şişirmesini (liderlik hilesi)
+      // ve belgeyi 1MB limitine kadar büyütmesini sınırlar.
+      // Üst sınırlar: hafta 7*24sa=604800sn; seans birikimi 48sa;
+      // days en fazla 400 gün anahtarı.
+      function validUserDoc() {
+        let d = request.resource.data;
+        return d.get('name', '') is string && d.get('name', '').size() <= 40
+          && d.get('weekTotalSec', 0) is number
+          && d.get('weekTotalSec', 0) >= 0
+          && d.get('weekTotalSec', 0) <= 605000
+          && d.get('allTimeSec', 0) is number
+          && d.get('allTimeSec', 0) >= 0
+          && d.get('sessionAccumulatedSec', 0) is number
+          && d.get('sessionAccumulatedSec', 0) >= 0
+          && d.get('sessionAccumulatedSec', 0) <= 172800
+          && d.get('championshipCount', 0) is number
+          && d.get('championshipCount', 0) >= 0
+          && d.get('days', {}) is map
+          && d.get('days', {}).size() <= 400;
+      }
+
       // Scoreboard: oda üyeleri birbirinin süresini görür.
       // (Anonim auth zorunlu; herkese açık değil.)
       allow read: if request.auth != null;
 
       // Yalnızca kendi belgeni oluşturabilir/güncelleyebilirsin.
-      allow create, update: if request.auth != null
-        && request.auth.uid == uid;
+      allow create: if request.auth != null
+        && request.auth.uid == uid
+        && validUserDoc();
+
+      // Update'te ek monotonluk: allTimeSec asla azalamaz (geri sarma /
+      // silme koruması); championshipCount tek seferde en fazla 1 artar.
+      allow update: if request.auth != null
+        && request.auth.uid == uid
+        && validUserDoc()
+        && request.resource.data.get('allTimeSec', 0)
+             >= resource.data.get('allTimeSec', 0)
+        && request.resource.data.get('championshipCount', 0)
+             >= resource.data.get('championshipCount', 0)
+        && request.resource.data.get('championshipCount', 0)
+             <= resource.data.get('championshipCount', 0) + 1;
 
       allow delete: if false;
     }
@@ -51,7 +86,9 @@ service cloud.firestore {
              .difference(request.resource.data.memberUids.toSet())
              .hasOnly([request.auth.uid]);
 
-      allow delete: if false;
+      // Son üye odayı tümden silebilir (boş/yetim oda birikmesin).
+      allow delete: if request.auth != null
+        && resource.data.memberUids == [request.auth.uid];
     }
 
     // ---- Tepki/mesaj belgeleri (6 saat yaşar) ----
@@ -60,8 +97,12 @@ service cloud.firestore {
       allow read: if request.auth != null;
 
       // Yalnızca kendi adına, ≤50 karakter, en fazla ~7 saatlik ömürle.
+      // fromName da sınırlı (isim şişirme/spoof kısıtı).
       allow create: if request.auth != null
         && request.resource.data.fromUid == request.auth.uid
+        && request.resource.data.fromName is string
+        && request.resource.data.fromName.size() > 0
+        && request.resource.data.fromName.size() <= 40
         && request.resource.data.text is string
         && request.resource.data.text.size() > 0
         && request.resource.data.text.size() <= 50

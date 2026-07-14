@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { isLocalMode, type UserProfile } from '../services/db'
 import { useTimer } from '../hooks/useTimer'
 import { useMilestone } from '../hooks/useMilestone'
@@ -43,16 +43,29 @@ export default function Timer({ user }: TimerProps) {
   const milestone = useMilestone(user.uid, weekWithActiveSec)
   const [summary, setSummary] = useState<StopSummary | null>(null)
 
+  // Seans BAŞINDAKİ haftalık taban: "yeni rozet" hesabı bunun üstünden
+  // yapılır. (Duraklatmalar segmentleri anında kalıcılaştırdığı için
+  // durdurma anındaki weekTotalSec seans-SONRASI değerdir — ona göre
+  // kıyaslanırsa duraklatılıp durdurulan seansta yeni rozet hiç çıkmazdı.)
+  const sessionWeekBaseRef = useRef<number | null>(null)
+
+  function handleStart() {
+    sessionWeekBaseRef.current = weekTotalSec
+    start()
+  }
+
   // Durdur: önce bu seansta/haftada kazanılan rozetleri hesapla, sonra
   // durdur ve kalıcı bir özet pop-up'ı göster (canlı toast kaçırılsa bile
   // kazanımlar burada görünür).
   function handleStop() {
-    const before = weekTotalSec // aktif seans hariç, seans öncesi haftalık toplam
+    // Seans başı tabanı (reload sonrası ref boşsa mevcut tabana düşülür)
+    const before = sessionWeekBaseRef.current ?? weekTotalSec
     const finalWeek = weekWithActiveSec // seans dahil, bu haftaki nihai toplam
     const finalToday = todayWithActiveSec // seans dahil, bugünkü nihai toplam
     const earned = earnedMilestones(finalWeek)
     const newly = earned.filter((m) => m.sec > before) // bu seansta yeni aşılanlar
     stop()
+    sessionWeekBaseRef.current = null
     setSummary({
       sessionSec: elapsedSec,
       weekSec: finalWeek,
@@ -94,7 +107,7 @@ export default function Timer({ user }: TimerProps) {
 
       <div className="timer-controls">
         {status === 'idle' && (
-          <button type="button" className="btn btn-primary btn-wide" onClick={start}>
+          <button type="button" className="btn btn-primary btn-wide" onClick={handleStart}>
             Başlat
           </button>
         )}

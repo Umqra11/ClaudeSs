@@ -31,6 +31,24 @@ function clockOf(ms: number): string {
 }
 
 /**
+ * Aktif service worker kaydını döndürür; yoksa `ready`'yi KISA bir
+ * zaman aşımıyla bekler. (Kayıtlı SW hiç yoksa `serviceWorker.ready`
+ * asla resolve olmaz — süresiz askıda promise bırakmamak için.)
+ */
+async function swRegistration(): Promise<ServiceWorkerRegistration | null> {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration()
+    if (reg?.active) return reg
+    return await Promise.race([
+      navigator.serviceWorker.ready,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 3000)),
+    ])
+  } catch {
+    return null
+  }
+}
+
+/**
  * Bildirim iznini ister (yalnızca kullanıcı hareketiyle çağrılmalı).
  * Zaten verilmiş/reddedilmişse yeniden sormaz. İzin verildiyse true.
  */
@@ -49,7 +67,8 @@ export async function ensureStudyPermission(): Promise<boolean> {
 export async function showStudyNotification(startedAtMs: number): Promise<void> {
   if (!supported() || Notification.permission !== 'granted') return
   try {
-    const reg = await navigator.serviceWorker.ready
+    const reg = await swRegistration()
+    if (!reg) return
     await reg.showNotification('Çalışıyorsun 📚', {
       body: `${clockOf(startedAtMs)}'de başladın · odaklan`,
       tag: TAG,
@@ -68,7 +87,8 @@ export async function showStudyNotification(startedAtMs: number): Promise<void> 
 export async function clearStudyNotification(): Promise<void> {
   if (!supported()) return
   try {
-    const reg = await navigator.serviceWorker.ready
+    const reg = await swRegistration()
+    if (!reg) return
     const list = await reg.getNotifications({ tag: TAG })
     list.forEach((n) => n.close())
   } catch {

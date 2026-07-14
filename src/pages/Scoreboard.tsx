@@ -47,10 +47,16 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
   // Canlı akış: çalışan üyelerin süresi istemcide her saniye
   // yerel olarak hesaplanır — Firestore'a saniyelik yazım yok.
   // Aynı tik, süresi dolan tepkileri de görünümden düşürür.
+  // Kimse çalışmıyorken ve aktif tepki yokken tik gereksiz — boşa
+  // render/pil harcamamak için koşullu kurulur.
+  const anyLive =
+    members.some((m) => m.isStudying) ||
+    reactions.some((r) => r.expireAt > Date.now())
   useEffect(() => {
+    if (!anyLive) return
     const id = setInterval(() => setTick((t) => t + 1), 1000)
     return () => clearInterval(id)
-  }, [])
+  }, [anyLive])
 
   // Onay bekleyen "Ayrıl" ~3 sn dokunulmazsa eski haline döner
   useEffect(() => {
@@ -89,7 +95,12 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
           championshipCount: (self.championshipCount ?? 0) + 1,
           lastChampionWeekId: judge,
         })
-        .catch(() => {})
+        .catch(() => {
+          // Yazım başarısız (çevrimdışı vb.): guard'ı geri al ki bir
+          // sonraki members snapshot'ında yeniden denensin — şampiyonluk
+          // sessizce kaybolmasın.
+          awardedWeekRef.current = null
+        })
     }
     // Bu oturumda kapatılmadıysa karşılama afişini göster
     if (dismissedWeekRef.current !== judge) setChampBanner(true)
@@ -178,7 +189,11 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
           m.uid !== user.uid && !m.isStudying ? formatLastSeen(m.lastSeenAt, now) : null,
       }
     })
-    .sort((a, b) => b.liveSec - a.liveSec)
+    .sort(
+      // Eşitlikte isim (TR alfabetik) ikincil kriter — taç/lider banner'ı
+      // snapshot sırasına göre keyfi birine gitmesin, sıra kararlı olsun.
+      (a, b) => b.liveSec - a.liveSec || a.name.localeCompare(b.name, 'tr'),
+    )
 
   // Anlık lider: bu haftaki canlı sıralamada 1. sıradaki (süresi > 0 olan)
   const leader = rows.length > 0 && rows[0].liveSec > 0 ? rows[0] : null
