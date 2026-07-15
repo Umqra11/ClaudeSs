@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRoom } from '../hooks/useRoom'
 import { formatClock, formatLastSeen, formatTimeOfDay } from '../lib/format'
-import { getWeekId, previousWeekId } from '../lib/week'
+import { getWeekId, previousWeekId, weekStartMs } from '../lib/week'
 import { weekTotalFromDays } from '../lib/stats'
 import { db, REACTION_MAX_LEN, type UserProfile } from '../services/db'
 
@@ -70,10 +70,15 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
   // Bu oturumda afişi kapattığımız hafta (tekrar açılmasın)
   const dismissedWeekRef = useRef<string | null>(null)
 
-  // Haftalık şampiyon tespiti: tamamlanmış haftanın birincisi kendi
+  // Haftalık şampiyon tespiti: tamamlanmış haftanın TEK birincisi kendi
   // şampiyonluk sayacını artırır (self-award — herkes yalnızca kendi
-  // dokümanına yazabilir). Beraberlikte tüm en yüksekler şampiyon sayılır.
+  // dokümanına yazabilir).
   useEffect(() => {
+    // Üye dokümanları Firestore'dan TEK TEK akar; liste TAMAMLANMADAN
+    // değerlendirme yapılırsa herkes eksik listede kendini "en yüksek"
+    // görüp erken ödül alır (birden fazla kişiye kupa gitmesinin nedeni
+    // buydu). Oda kadrosunun tamamı gelmeden karar verme.
+    if (!room || members.length !== room.memberUids.length) return
     if (members.length === 0) return
     const judge = previousWeekId(getWeekId())
     const self = members.find((m) => m.uid === user.uid)
@@ -84,7 +89,13 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
       0,
       ...members.map((m) => completedWeekTotal(m, judge)),
     )
-    const isChampion = maxTotal > 0 && myTotal === maxTotal
+    // Kupa yalnızca TEK birinciye: eşitlikte kimseye verilmez (saniye
+    // hassasiyetinde gerçek eşitlik pratikte olmaz; çoklu kupa şikayetini
+    // kökten kapatır).
+    const topCount = members.filter(
+      (m) => completedWeekTotal(m, judge) === maxTotal,
+    ).length
+    const isChampion = maxTotal > 0 && myTotal === maxTotal && topCount === 1
     if (!isChampion) return
 
     // Ödülü hafta başına yalnızca bir kez yaz
@@ -104,7 +115,7 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
     }
     // Bu oturumda kapatılmadıysa karşılama afişini göster
     if (dismissedWeekRef.current !== judge) setChampBanner(true)
-  }, [members, user.uid])
+  }, [members, room, user.uid])
 
   function dismissChampBanner() {
     dismissedWeekRef.current = previousWeekId(getWeekId())
@@ -169,9 +180,18 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
       // bayat weekTotalSec alanına bağımsız). Salı sıfırlaması otomatik:
       // yeni haftada henüz gün yoktur.
       const base = weekTotalFromDays(m.days, currentWeekId)
+      // Koşan seans Salı 00:00 (hafta başı) sınırını kestiyse yalnızca
+      // sınırdan SONRAKİ payı bu haftaya sayılır. Aksi halde gece
+      // yarısında hâlâ çalışan biri, önceki haftanın akşam saatlerini de
+      // yeni haftaya taşıyıp haksız "birinci" görünürdü (sınır öncesi pay
+      // zaten kalıcı kayda önceki haftanın günü olarak işlenir).
       const running =
         m.isStudying && m.sessionStartedAt
-          ? (now - m.sessionStartedAt) / 1000
+          ? Math.max(
+              0,
+              (now - Math.max(m.sessionStartedAt, weekStartMs(currentWeekId))) /
+                1000,
+            )
           : 0
       return {
         ...m,
