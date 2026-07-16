@@ -279,22 +279,40 @@ class FirebaseBackend implements Backend {
     })
   }
 
+  // Bu oturumda silmeyi denediğimiz süresi-dolmuş tepkiler (tekrar tekrar
+  // denememek için). Silme "fırsatçı temizlik"tir: kurallar süresi dolmuş
+  // belgeyi herkese sildirtir; Console'da TTL politikası kurmak GEREKMEZ.
+  private cleanedReactionIds = new Set<string>()
+
   subscribeReactions(
     roomId: string,
     cb: (reactions: Reaction[]) => void,
   ): Unsubscribe {
     // Yalnızca roomId eşitliği: otomatik tek-alan index yeterlidir,
     // composite index / konsol adımı GEREKTİRMEZ. Süresi geçenler görünüm
-    // katmanında süzülür; kalıcı temizlik Firebase Console'daki TTL
-    // politikasıyla (reactions.expireAt) yapılır — TTL aktifken koleksiyon
-    // zaten küçük kalır, ek sorgu filtresine gerek kalmaz.
+    // katmanında süzülür; kalıcılığı da aşağıdaki fırsatçı silme temizler.
     const q = query(
       collection(this.db, 'reactions'),
       where('roomId', '==', roomId),
     )
     return onSnapshot(q, (snaps) => {
+      const now = Date.now()
+      let cleanupBudget = 20 // tek snapshot'ta en fazla 20 silme (patlama olmasın)
       const list: Reaction[] = snaps.docs.map((s) => {
         const d = s.data()
+        const expireAtMs =
+          d.expireAt instanceof Timestamp ? d.expireAt.toMillis() : 0
+        // Süresi dolmuş belgeyi arka planda sil (en-iyi-çaba; kural henüz
+        // yayınlanmadıysa veya yarışta başkası sildiyse sessizce geçilir).
+        if (
+          expireAtMs <= now &&
+          cleanupBudget > 0 &&
+          !this.cleanedReactionIds.has(s.id)
+        ) {
+          cleanupBudget--
+          this.cleanedReactionIds.add(s.id)
+          void deleteDoc(s.ref).catch(() => {})
+        }
         return {
           id: s.id,
           roomId: d.roomId ?? '',
@@ -304,8 +322,7 @@ class FirebaseBackend implements Backend {
           text: d.text ?? '',
           createdAt:
             d.createdAt instanceof Timestamp ? d.createdAt.toMillis() : 0,
-          expireAt:
-            d.expireAt instanceof Timestamp ? d.expireAt.toMillis() : 0,
+          expireAt: expireAtMs,
         }
       })
       cb(list.sort((a, b) => a.createdAt - b.createdAt))
