@@ -80,6 +80,26 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
     // buydu). Oda kadrosunun tamamı gelmeden karar verme.
     if (!room || members.length !== room.memberUids.length) return
     if (members.length === 0) return
+
+    // Salı 00:00 sınırını kesen ve HÂLÂ KOŞAN bir seans varsa: o üyenin
+    // geçen hafta payı (Pazartesi akşamı) duraklat/durdur'a kadar kalıcı
+    // kayda işlenmemiştir — eksik veriyle kupa kararı verme, seans bitene
+    // dek ertele. Guard'lar: yalnızca hafta başından sonraki ilk 24 saatte
+    // ve yalnızca sınırdan en fazla 24 saat önce başlamış (gerçekçi)
+    // seanslar için — bayat bir isStudying bayrağı kupayı süresiz kilitlemesin.
+    const nowMs = Date.now()
+    const weekStart = weekStartMs(getWeekId())
+    const boundaryPending =
+      nowMs - weekStart < 24 * 3600_000 &&
+      members.some(
+        (m) =>
+          m.isStudying &&
+          m.sessionStartedAt != null &&
+          m.sessionStartedAt < weekStart &&
+          weekStart - m.sessionStartedAt < 24 * 3600_000,
+      )
+    if (boundaryPending) return
+
     const judge = previousWeekId(getWeekId())
     const self = members.find((m) => m.uid === user.uid)
     if (!self) return
