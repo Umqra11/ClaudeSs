@@ -110,7 +110,12 @@ service cloud.firestore {
         && request.resource.data.expireAt > request.time
         && request.resource.data.expireAt < request.time + duration.value(7, 'h');
 
-      allow update, delete: if false;
+      allow update: if false;
+      // Süresi DOLMUŞ tepkiyi herkes silebilir: istemciler açılışta
+      // fırsatçı temizlik yapar (Console'da TTL politikası kurmaya gerek
+      // kalmaz). Süresi dolmamış tepki silinemez.
+      allow delete: if request.auth != null
+        && resource.data.expireAt < request.time;
     }
   }
 }
