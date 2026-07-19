@@ -283,15 +283,68 @@ export function useTimer(user: UserProfile) {
     [user],
   )
 
+  // CHECKPOINT: koşarken periyodik olarak (birkaç dakikada bir) o ana kadarki
+  // segmenti `days`'e ARTIMLI yaz ve koşan bacağın başlangıcını (startedAt +
+  // backend sessionStartedAt) o ana ilerlet. Böylece kullanıcı DURAKLAT/DURDUR
+  // demeden de süre database'e birikir; kapatınca/cihaz değiştirince en fazla
+  // son checkpoint'ten beriki kısım risk altında olur ve başkalarının ekranında
+  // toplam düşmez. Çift sayım YOK: bacak ilerlediği için hem yerel hesap hem de
+  // başkalarının canlı `running` payı yalnız "son checkpoint'ten beri"dir; days
+  // ise checkpoint'e kadarını içerir (settleId ile de idempotenttir). Kronometre
+  // görünümü kesintisiz kalır (elapsed = accumulated + (now - startedAt) aynıdır).
+  const checkpoint = useCallback(() => {
+    const prev = stateRef.current
+    if (prev.status !== 'running' || !prev.startedAt) return
+    const now = Date.now()
+    const settled = settleSegment(prev.startedAt, now)
+    const s: TimerState = {
+      ...prev,
+      startedAt: now, // bacağı ilerlet — görünüm için accumulated'e katıldı
+      accumulatedSec: prev.accumulatedSec + (now - prev.startedAt) / 1000,
+    }
+    setState(s) // durum→localStorage effect'i aliveAt + yeni startedAt'i yazar
+    void persistSettle(user.uid, {
+      isStudying: true,
+      sessionStartedAt: now, // başkaları: running = now - sessionStartedAt (çakışmaz)
+      sessionAccumulatedSec: Math.round(s.accumulatedSec),
+      weekId: getWeekId(),
+      weekTotalSec: weekTotalFromDays(settled.days),
+      daysIncrement: settled.perDay,
+      allTimeIncrementSec: settled.segSec,
+      settleId: crypto.randomUUID(),
+      lastHeartbeatAt: Date.now(),
+    })
+  }, [settleSegment, user.uid])
+
+  // Aralıklı effect'ler yalnız state.status'a bağlı olmalı: aksi halde canlı
+  // `user` aboneliği her yazım yankısında (60sn heartbeat dahil) syncBackend/
+  // checkpoint kimliğini değiştirip interval'ı SIFIRLIYOR — 150sn'lik checkpoint
+  // hiç tetiklenemiyordu. Güncel fonksiyonlar ref üzerinden okunur; interval
+  // yalnız idle↔running geçişinde yeniden kurulur.
+  const syncBackendRef = useRef(syncBackend)
+  syncBackendRef.current = syncBackend
+  const persistTimerRef = useRef(persistTimer)
+  persistTimerRef.current = persistTimer
+  const checkpointRef = useRef(checkpoint)
+  checkpointRef.current = checkpoint
+
+  // Koşarken 2,5 dakikada bir checkpoint (kayıp penceresini birkaç dakikaya
+  // indirir; Firestore'u saniyelik yazımlarla yormaz).
+  useEffect(() => {
+    if (state.status !== 'running') return
+    const id = setInterval(() => checkpointRef.current(), 150_000)
+    return () => clearInterval(id)
+  }, [state.status])
+
   // Running iken 60 sn'de bir heartbeat (presence + aliveAt tazeler)
   useEffect(() => {
     if (state.status !== 'running') return
     const id = setInterval(() => {
-      syncBackend(stateRef.current)
-      persistTimer(stateRef.current)
+      syncBackendRef.current(stateRef.current)
+      persistTimerRef.current(stateRef.current)
     }, 60_000)
     return () => clearInterval(id)
-  }, [state.status, syncBackend, persistTimer])
+  }, [state.status])
 
   // Uygulamaya geri dönünce: presence heartbeat'i + aliveAt'i tazele (başkaları
   // seni hızlı "çalışıyor" görsün, bayat sayılmayasın) ve bildirimi yenile
