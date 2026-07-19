@@ -36,7 +36,10 @@ service cloud.firestore {
           && d.get('championshipCount', 0) is number
           && d.get('championshipCount', 0) >= 0
           && d.get('days', {}) is map
-          && d.get('days', {}).size() <= 400;
+          && d.get('days', {}).size() <= 400
+          // Presence + idempotent-settle alanları (belge şişirmeye karşı sınır).
+          && d.get('lastSettleId', '') is string
+          && d.get('lastSettleId', '').size() <= 64;
       }
 
       // Scoreboard: oda üyeleri birbirinin süresini görür.

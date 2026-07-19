@@ -13,6 +13,22 @@ function completedWeekTotal(m: UserProfile, weekId: string): number {
   return weekTotalFromDays(m.days, weekId)
 }
 
+// Presence-TTL: bir üyeyi ancak heartbeat'i TAZE ise "çalışıyor" say. Uygulama
+// kapanınca/çevrimdışı olunca Firestore'da isStudying=true + eski
+// sessionStartedAt sonsuza dek takılı kalabiliyordu → başkaları hayalet bir
+// oturumu süresiz büyüyor görüyordu. Heartbeat 60sn yazıldığından 2,5dk birkaç
+// kaçan vuruşu tolere eder; bu süre sonrası üye "son görülme"ye düşer.
+const HEARTBEAT_STALE_MS = 150_000
+
+function isLiveStudying(m: UserProfile, now: number): boolean {
+  return (
+    m.isStudying &&
+    m.sessionStartedAt != null &&
+    m.lastHeartbeatAt != null &&
+    now - m.lastHeartbeatAt < HEARTBEAT_STALE_MS
+  )
+}
+
 interface ScoreboardProps {
   user: UserProfile
   roomId: string
@@ -50,7 +66,7 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
   // Kimse çalışmıyorken ve aktif tepki yokken tik gereksiz — boşa
   // render/pil harcamamak için koşullu kurulur.
   const anyLive =
-    members.some((m) => m.isStudying) ||
+    members.some((m) => isLiveStudying(m, Date.now())) ||
     reactions.some((r) => r.expireAt > Date.now())
   useEffect(() => {
     if (!anyLive) return
@@ -93,7 +109,7 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
       nowMs - weekStart < 24 * 3600_000 &&
       members.some(
         (m) =>
-          m.isStudying &&
+          isLiveStudying(m, nowMs) &&
           m.sessionStartedAt != null &&
           m.sessionStartedAt < weekStart &&
           weekStart - m.sessionStartedAt < 24 * 3600_000,
@@ -200,13 +216,16 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
       // bayat weekTotalSec alanına bağımsız). Salı sıfırlaması otomatik:
       // yeni haftada henüz gün yoktur.
       const base = weekTotalFromDays(m.days, currentWeekId)
+      // Presence-TTL: yalnız heartbeat'i taze üye "canlı" sayılır (ghost
+      // oturumlar başkalarında sonsuza dek büyümesin).
+      const live = isLiveStudying(m, now)
       // Koşan seans Salı 00:00 (hafta başı) sınırını kestiyse yalnızca
       // sınırdan SONRAKİ payı bu haftaya sayılır. Aksi halde gece
       // yarısında hâlâ çalışan biri, önceki haftanın akşam saatlerini de
       // yeni haftaya taşıyıp haksız "birinci" görünürdü (sınır öncesi pay
       // zaten kalıcı kayda önceki haftanın günü olarak işlenir).
       const running =
-        m.isStudying && m.sessionStartedAt
+        live && m.sessionStartedAt
           ? Math.max(
               0,
               (now - Math.max(m.sessionStartedAt, weekStartMs(currentWeekId))) /
@@ -215,6 +234,7 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
           : 0
       return {
         ...m,
+        live,
         // NOT sessionAccumulatedSec: weekTotalSec artık her duraklatmada
         // (settleSegment ile) güncel tutuluyor; ayrıca eklemek çift sayım
         // olurdu. sessionAccumulatedSec yalnızca çapraz-cihaz devralma için
@@ -222,11 +242,11 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
         liveSec: Math.max(0, Math.floor(base + running)),
         // Bu üyeye gelen aktif tepkilerin son 2'si
         bubbles: activeReactions.filter((r) => r.toUid === m.uid).slice(-2),
-        // Çalışmıyorsa (duraklatılmış veya durdurulmuş) WhatsApp tarzı "son
-        // görülme" — duraklatma/durdurma saatini gösterir; kendi satırında
-        // gösterilmez.
+        // Canlı değilse (duraklatılmış, durdurulmuş veya heartbeat'i bayat —
+        // uygulama kapalı/çevrimdışı) WhatsApp tarzı "son görülme"; kendi
+        // satırında gösterilmez.
         lastSeenText:
-          m.uid !== user.uid && !m.isStudying ? formatLastSeen(m.lastSeenAt, now) : null,
+          m.uid !== user.uid && !live ? formatLastSeen(m.lastSeenAt, now) : null,
       }
     })
     .sort(
@@ -327,7 +347,7 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
                     </span>
                   )}
                 </span>
-                {m.isStudying && (
+                {m.live && (
                   <span className="board-studying">
                     <span className="pulse-dot" aria-hidden="true" />
                     çalışıyor
