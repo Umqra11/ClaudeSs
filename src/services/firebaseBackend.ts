@@ -13,6 +13,7 @@ import {
   increment,
   onSnapshot,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   Timestamp,
@@ -57,6 +58,9 @@ function mapUserDoc(uid: string, d: any): UserProfile {
     lastChampionWeekId: d.lastChampionWeekId ?? null,
     prevWeekId: d.prevWeekId ?? null,
     prevWeekTotalSec: d.prevWeekTotalSec ?? 0,
+    lastHeartbeatAt:
+      d.lastHeartbeatAt instanceof Timestamp ? d.lastHeartbeatAt.toMillis() : null,
+    lastSettleId: d.lastSettleId ?? null,
   }
 }
 
@@ -117,39 +121,81 @@ class FirebaseBackend implements Backend {
       lastChampionWeekId: null,
       prevWeekId: null,
       prevWeekTotalSec: 0,
+      lastHeartbeatAt: null,
+      lastSettleId: null,
       updatedAt: serverTimestamp(),
     })
     return emptyProfile(uid, name)
   }
 
   async updateUser(uid: string, patch: UserPatch): Promise<void> {
-    const { daysIncrement, allTimeIncrementSec, ...rest } = patch
-    const data: Record<string, unknown> = {
-      ...rest,
-      updatedAt: serverTimestamp(),
+    const { daysIncrement, allTimeIncrementSec, settleId, ...rest } = patch
+    const ref = doc(this.db, 'users', uid)
+
+    // Artımlı (days/allTime) katkı taşıyan bir settle mi?
+    const hasIncrements =
+      (daysIncrement && Object.keys(daysIncrement).length > 0) ||
+      (allTimeIncrementSec != null && allTimeIncrementSec > 0)
+
+    // Zaman-damgası/serverTimestamp dönüşümleri + ...rest — her iki yolda ortak.
+    const buildBase = (): Record<string, unknown> => {
+      const data: Record<string, unknown> = {
+        ...rest,
+        updatedAt: serverTimestamp(),
+      }
+      if ('sessionStartedAt' in rest) {
+        data.sessionStartedAt =
+          rest.sessionStartedAt == null
+            ? null
+            : Timestamp.fromMillis(rest.sessionStartedAt)
+      }
+      if ('lastSeenAt' in rest) {
+        data.lastSeenAt =
+          rest.lastSeenAt == null ? null : Timestamp.fromMillis(rest.lastSeenAt)
+      }
+      // Presence: istemci saat kaymasına bağışık olsun diye SUNUCU saatini yaz.
+      if ('lastHeartbeatAt' in rest) {
+        data.lastHeartbeatAt = serverTimestamp()
+      }
+      return data
     }
-    if ('sessionStartedAt' in rest) {
-      data.sessionStartedAt =
-        rest.sessionStartedAt == null
-          ? null
-          : Timestamp.fromMillis(rest.sessionStartedAt)
-    }
-    if ('lastSeenAt' in rest) {
-      data.lastSeenAt =
-        rest.lastSeenAt == null ? null : Timestamp.fromMillis(rest.lastSeenAt)
-    }
-    // Artımlı yazımlar: dot-path + increment ile ALAN BAZINDA eklenir —
-    // bayat bir istemci kopyası diğer sekmenin/istemcinin günlerini ezemez.
-    if (daysIncrement) {
-      for (const [dayId, sec] of Object.entries(daysIncrement)) {
-        const rounded = Math.round(sec)
-        if (rounded > 0) data[`days.${dayId}`] = increment(rounded)
+
+    const applyIncrements = (data: Record<string, unknown>): void => {
+      // Artımlı yazımlar: dot-path + increment ile ALAN BAZINDA eklenir —
+      // bayat bir istemci kopyası diğer sekmenin/istemcinin günlerini ezemez.
+      if (daysIncrement) {
+        for (const [dayId, sec] of Object.entries(daysIncrement)) {
+          const rounded = Math.round(sec)
+          if (rounded > 0) data[`days.${dayId}`] = increment(rounded)
+        }
+      }
+      if (allTimeIncrementSec && allTimeIncrementSec > 0) {
+        data.allTimeSec = increment(Math.round(allTimeIncrementSec))
       }
     }
-    if (allTimeIncrementSec && allTimeIncrementSec > 0) {
-      data.allTimeSec = increment(Math.round(allTimeIncrementSec))
+
+    // İDEMPOTENT SETTLE: settleId + artımlı katkı varsa transaction ile yaz.
+    // Aynı settleId ile tekrar gelen yazım (yeniden-deneme / çevrimdışı kuyruk
+    // tekrar-oynatması / reopen reconcile) increment'i BİR KEZ uygular — böylece
+    // "çevrimdışı/kapanışta düşen süre" kayıpsız kurtarılırken çift sayım olmaz.
+    if (settleId && hasIncrements) {
+      await runTransaction(this.db, async (tx) => {
+        const snap = await tx.get(ref)
+        const already =
+          snap.exists() && snap.data().lastSettleId === settleId
+        const data = buildBase()
+        data.lastSettleId = settleId
+        if (!already) applyIncrements(data)
+        tx.update(ref, data)
+      })
+      return
     }
-    await updateDoc(doc(this.db, 'users', uid), data)
+
+    // Presence / artımsız yol: tek updateDoc (ucuz). Bir heartbeat düşse
+    // sonraki düzeltir; idempotensiye gerek yok.
+    const data = buildBase()
+    applyIncrements(data)
+    await updateDoc(ref, data)
   }
 
   /** Tek oda kuralı: kullanıcı zaten bir odadaysa hata. */

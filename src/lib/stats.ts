@@ -31,6 +31,32 @@ export function getStats(user: UserProfile): Stats {
 }
 
 /**
+ * Canlı Firestore `user`'ını oturum-içi cache ile MONOTONİK birleştirir:
+ * gün bazında MAX, allTimeSec MAX. Amaç: self görünümü (cache) ile Firestore'un
+ * yakınsaması — kendi cihazında yüksek, başkalarında düşük görünme sorununu
+ * kapatır. MAX (toplam DEĞİL) seçilir: artımlı (increment) yazımlarla çift
+ * saymayı önler ve "aynı gün çok cihaz" nadir kenarında güvenli taraftır. Self
+ * asla DÜŞMEZ; başka cihazda/başarıyla kalıcılaşan değerler yukarı alınır.
+ * useTimer, useAuth'un canlı aboneliğiyle gelen taze `user`'da bunu çağırır.
+ */
+export function mergeStats(user: UserProfile): Stats {
+  const s = getStats(user)
+  const incoming = user.days ?? {}
+  let days: Record<string, number> | null = null
+  for (const [dayId, sec] of Object.entries(incoming)) {
+    const v = Math.floor(sec)
+    if (v > (s.days[dayId] ?? 0)) {
+      if (!days) days = { ...s.days }
+      days[dayId] = v
+    }
+  }
+  if (days) s.days = days
+  const incomingAll = Math.floor(user.allTimeSec ?? 0)
+  if (incomingAll > s.allTimeSec) s.allTimeSec = incomingAll
+  return s
+}
+
+/**
  * Verilen haftaya (Salı 00:00 → ertesi Salı 00:00) düşen günlerin toplamı.
  * `days` (günlük geçmiş) yalnızca artan (monotonik) bir kaynaktır; haftalık
  * toplamı buradan TÜRETMEK, ayrı/bayat/kör-yazılan bir weekTotalSec alanına

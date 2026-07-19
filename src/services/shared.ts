@@ -29,6 +29,17 @@ export interface UserProfile {
   prevWeekId: string | null
   /** prevWeekId haftasının toplam çalışma süresi (saniye) — snapshot. */
   prevWeekTotalSec: number
+  /** Presence sinyali: koşan istemcinin en son "hayatta" olduğu an. start/
+   *  resume/heartbeat (60sn) yazar; Firebase'de sunucu saatiyle (serverTimestamp)
+   *  yazılır (istemci saat kaymasına bağışık). Scoreboard bunu okur: bir üye
+   *  ancak heartbeat'i taze (≈son 2,5dk) ise "çalışıyor" sayılır — uygulama
+   *  kapanınca takılı kalan isStudying artık başkalarında hayalet oturum
+   *  göstermez. Eski hesaplarda / hiç çalışmamışta null. */
+  lastHeartbeatAt: number | null
+  /** En son uygulanan settle (duraklat/durdur) yazımının kimliği. İdempotent
+   *  yeniden-deneme/kuyruk tekrar-oynatması için: aynı settleId'li bir yazım
+   *  ARTIMLI (days/allTimeSec) katkıyı yalnızca BİR KEZ uygular (çift saymaz). */
+  lastSettleId: string | null
 }
 
 export interface Room {
@@ -48,6 +59,11 @@ export type UserPatch = Partial<Omit<UserProfile, 'uid'>> & {
   daysIncrement?: Record<string, number>
   /** allTimeSec'e artımlı ekleme (saniye) — aynı gerekçe. */
   allTimeIncrementSec?: number
+  /** Settle (duraklat/durdur) yazımının benzersiz kimliği. Verilirse backend
+   *  ARTIMLI alanları idempotent uygular: aynı settleId ile tekrar gelen yazım
+   *  (yeniden-deneme / çevrimdışı kuyruk tekrar-oynatması / reopen reconcile)
+   *  increment'i tekrar EKLEMEZ. `lastSettleId` alanına yazılır. */
+  settleId?: string
 }
 export type Unsubscribe = () => void
 
@@ -139,5 +155,7 @@ export function emptyProfile(uid: string, name: string): UserProfile {
     lastChampionWeekId: null,
     prevWeekId: null,
     prevWeekTotalSec: 0,
+    lastHeartbeatAt: null,
+    lastSettleId: null,
   }
 }

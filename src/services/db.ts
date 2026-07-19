@@ -100,11 +100,14 @@ class LocalBackend implements Backend {
   async updateUser(uid: string, patch: UserPatch): Promise<void> {
     const current = this.readUserSync()
     if (!current || current.uid !== uid) return
-    const { daysIncrement, allTimeIncrementSec, ...rest } = patch
+    const { daysIncrement, allTimeIncrementSec, settleId, ...rest } = patch
     const next: UserProfile = { ...current, ...rest }
+    // İdempotent settle: aynı settleId daha önce uygulandıysa ARTIMLI katkıyı
+    // tekrar ekleme (yeniden-deneme / kuyruk tekrar-oynatması çift saymasın).
+    const alreadySettled = settleId != null && current.lastSettleId === settleId
     // Artımlı alanlar mevcut değerin ÜZERİNE eklenir (Firestore increment
     // davranışının yerel karşılığı) — bayat kopya günleri ezemez.
-    if (daysIncrement) {
+    if (daysIncrement && !alreadySettled) {
       const days = { ...next.days }
       for (const [dayId, sec] of Object.entries(daysIncrement)) {
         const rounded = Math.round(sec)
@@ -112,9 +115,10 @@ class LocalBackend implements Backend {
       }
       next.days = days
     }
-    if (allTimeIncrementSec && allTimeIncrementSec > 0) {
+    if (allTimeIncrementSec && allTimeIncrementSec > 0 && !alreadySettled) {
       next.allTimeSec = (next.allTimeSec ?? 0) + Math.round(allTimeIncrementSec)
     }
+    if (settleId != null) next.lastSettleId = settleId
     localStorage.setItem(LOCAL_KEY, JSON.stringify(next))
     this.memberListeners.forEach((emit) => emit())
   }
