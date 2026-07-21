@@ -28,137 +28,52 @@ import {
 } from '../lib/stats'
 import { installSettleFlush, persistSettle } from '../lib/settleQueue'
 import {
+  IDLE,
+  inheritTimerState,
+  type PersistedTimer,
+  type TimerState,
+  type TimerStatus,
+} from '../lib/timerState'
+import {
   clearStudyNotification,
   ensureStudyPermission,
   showStudyNotification,
 } from '../lib/notify'
 
-export type TimerStatus = 'idle' | 'running' | 'paused'
-
-interface TimerState {
-  status: TimerStatus
-  startedAt: number | null // koşan parçanın başlangıcı (epoch ms)
-  accumulatedSec: number // önceki parçalarda biriken süre — YALNIZCA
-  // büyük saatin kümülatif GÖRÜNÜMÜ içindir; gün/hafta kalıcılığı
-  // settleSegment ile parça bittiği anda (pause/stop) ayrıca yapılıyor.
-  sessionStartMs: number | null // seansın ilk başlama anı
-}
-
-interface PersistedTimer extends TimerState {
-  uid: string
-  /** Bu istemcinin en son "hayatta" olduğu an (ms) — heartbeat/görünürlük/
-   *  durum değişiminde tazelenir. Açılışta devralınan KOŞAN bir seans için:
-   *  now - aliveAt büyükse uygulama mid-session kapatılmış demektir; kapalı
-   *  boşluk çalışma sayılmamalıdır (bkz. readInherited/reconcile). */
-  aliveAt?: number
-}
+export type { TimerStatus }
 
 const TIMER_KEY = 'kpss.timer'
 
-// Devralınan koşan seansta "kapatılmış" sayma eşiği: son yaşam kanıtından bu
-// yana bu kadar süre geçtiyse, aradaki boşluk uygulama kapalıyken geçmiştir.
-// heartbeat 60sn olduğundan 2dk birkaç kaçan vuruşu tolere eder.
-const STALE_GAP_MS = 120_000
-
-const IDLE: TimerState = {
-  status: 'idle',
-  startedAt: null,
-  accumulatedSec: 0,
-  sessionStartMs: null,
-}
-
-interface Inherited {
-  state: TimerState
-  /** Devralınan seans mid-session KAPATILMIŞSA: kapalı boşluğu saymadan
-   *  [startedAt, endMs] segmentini kalıcılaştırmak için gerekenler (mount
-   *  effect'inde bir kez işlenir). Yoksa null. */
-  staleRunning: { startedAt: number; endMs: number } | null
-}
-
-/** Açılışta aktif seansı devral: önce localStorage, yoksa backend profili.
- *  Yan etkisizdir (settle YAPMAZ) — yalnız başlangıç durumunu ve gerekiyorsa
- *  bir "reconcile" görevini döner; reconcile mount effect'inde işlenir. */
-function readInherited(user: UserProfile): Inherited {
-  const now = Date.now()
-  // Koşan seansı tazelik açısından değerlendir: bayatsa IDLE + reconcile.
-  const evaluate = (state: TimerState, aliveAt: number | null): Inherited => {
-    if (state.status === 'running' && state.startedAt) {
-      const alive = aliveAt ?? state.startedAt
-      if (now - alive > STALE_GAP_MS) {
-        // Yalnız son yaşam kanıtına (aliveAt) kadarını çalışma say; kapalı
-        // geçen [aliveAt, now] boşluğu sayma. endMs, startedAt'ten küçük olamaz.
-        const endMs = Math.max(state.startedAt, Math.min(alive, now))
-        return { state: IDLE, staleRunning: { startedAt: state.startedAt, endMs } }
-      }
-    }
-    return { state, staleRunning: null }
-  }
+/** Açılışta aktif seansı devral: önce localStorage, yoksa backend profili. */
+function readInherited(user: UserProfile): TimerState {
+  let persisted: PersistedTimer | null = null
   try {
     const raw = localStorage.getItem(TIMER_KEY)
-    if (raw) {
-      const p = JSON.parse(raw) as PersistedTimer
-      if (p.uid === user.uid) {
-        if (p.status === 'running' || p.status === 'paused') {
-          const st: TimerState = {
-            status: p.status,
-            startedAt: p.startedAt ?? null,
-            accumulatedSec: p.accumulatedSec ?? 0,
-            sessionStartMs: p.sessionStartMs ?? p.startedAt ?? null,
-          }
-          return evaluate(st, p.aliveAt ?? null)
-        }
-        return { state: IDLE, staleRunning: null }
-      }
-    }
+    if (raw) persisted = JSON.parse(raw) as PersistedTimer
   } catch {
     /* bozuk kayıt — yok say */
   }
-  // localStorage boş (örn. yeni cihaz): backend profilinden devral
-  if (user.isStudying && user.sessionStartedAt) {
-    const st: TimerState = {
-      status: 'running',
-      startedAt: user.sessionStartedAt,
-      accumulatedSec: user.sessionAccumulatedSec,
-      sessionStartMs: user.sessionStartedAt,
-    }
-    return evaluate(st, user.lastHeartbeatAt ?? null)
-  }
-  if (user.sessionAccumulatedSec > 0) {
-    return {
-      state: {
-        status: 'paused',
-        startedAt: null,
-        accumulatedSec: user.sessionAccumulatedSec,
-        sessionStartMs: null,
-      },
-      staleRunning: null,
-    }
-  }
-  return { state: IDLE, staleRunning: null }
+  return inheritTimerState(persisted, user)
 }
 
 export function useTimer(user: UserProfile) {
   // Devralma bir kez hesaplanır (readInherited yan etkisizdir; strict-mode
-  // çift-çağrısında güvenli). staleRunning varsa mount effect'inde işlenir.
-  const [inherited] = useState<Inherited>(() => readInherited(user))
-  const [state, setState] = useState<TimerState>(inherited.state)
+  // çift-çağrısında güvenli). Koşan seans olduğu gibi devam eder.
+  const [state, setState] = useState<TimerState>(() => readInherited(user))
   const [, setTick] = useState(0)
 
   const stateRef = useRef(state)
   stateRef.current = state
 
-  // localStorage'a durum + "hayatta" damgası (aliveAt) yaz.
+  // localStorage'a durumu yaz.
   const persistTimer = useCallback(
     (s: TimerState) => {
-      localStorage.setItem(
-        TIMER_KEY,
-        JSON.stringify({ uid: user.uid, ...s, aliveAt: Date.now() }),
-      )
+      localStorage.setItem(TIMER_KEY, JSON.stringify({ uid: user.uid, ...s }))
     },
     [user.uid],
   )
 
-  // Her durum değişikliğini localStorage'a yaz (aliveAt dahil)
+  // Her durum değişikliğini localStorage'a yaz
   useEffect(() => {
     persistTimer(state)
   }, [state, persistTimer])
@@ -167,37 +82,6 @@ export function useTimer(user: UserProfile) {
   // yeniden dene (idempotent — settleId ile çift saymaz).
   useEffect(() => {
     installSettleFlush()
-  }, [])
-
-  // Devralınan seans mid-session KAPATILMIŞSA (bayat aliveAt): açılışta yalnız
-  // son yaşam kanıtına kadarını settle et, kapalı boşluğu SAYMA, isStudying'i
-  // temizle. Böylece hem reopen overcount (kendi süresi şişmez) hem de kendi
-  // hayalet oturumu (başkalarında "çalışıyor" takılı kalması) giderilir.
-  // Yalnız BİR KEZ (strict-mode çift-effect'ine karşı ref guard).
-  const reconciledRef = useRef(false)
-  useEffect(() => {
-    if (reconciledRef.current) return
-    reconciledRef.current = true
-    const stale = inherited.staleRunning
-    if (!stale) return
-    const patch = {
-      isStudying: false,
-      sessionStartedAt: null,
-      sessionAccumulatedSec: 0,
-      weekId: getWeekId(),
-      lastSeenAt: stale.endMs,
-    } as Parameters<typeof persistSettle>[1]
-    if (stale.endMs > stale.startedAt) {
-      const settled = settleSegment(stale.startedAt, stale.endMs)
-      patch.weekTotalSec = weekTotalFromDays(settled.days)
-      patch.daysIncrement = settled.perDay
-      patch.allTimeIncrementSec = settled.segSec
-      patch.settleId = crypto.randomUUID()
-    } else {
-      patch.weekTotalSec = weekTotalFromDays(getStats(user).days)
-    }
-    void persistSettle(user.uid, patch)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Canlı Firestore user'ı (useAuth aboneliği) geldikçe getStats cache'ini
@@ -302,7 +186,7 @@ export function useTimer(user: UserProfile) {
       startedAt: now, // bacağı ilerlet — görünüm için accumulated'e katıldı
       accumulatedSec: prev.accumulatedSec + (now - prev.startedAt) / 1000,
     }
-    setState(s) // durum→localStorage effect'i aliveAt + yeni startedAt'i yazar
+    setState(s) // durum→localStorage effect'i yeni startedAt'i yazar
     void persistSettle(user.uid, {
       isStudying: true,
       sessionStartedAt: now, // başkaları: running = now - sessionStartedAt (çakışmaz)
@@ -336,7 +220,7 @@ export function useTimer(user: UserProfile) {
     return () => clearInterval(id)
   }, [state.status])
 
-  // Running iken 60 sn'de bir heartbeat (presence + aliveAt tazeler)
+  // Running iken 60 sn'de bir heartbeat (presence tazeler + localStorage)
   useEffect(() => {
     if (state.status !== 'running') return
     const id = setInterval(() => {
@@ -346,9 +230,9 @@ export function useTimer(user: UserProfile) {
     return () => clearInterval(id)
   }, [state.status])
 
-  // Uygulamaya geri dönünce: presence heartbeat'i + aliveAt'i tazele (başkaları
-  // seni hızlı "çalışıyor" görsün, bayat sayılmayasın) ve bildirimi yenile
-  // (arka planda SW uyumuş olabilir).
+  // Uygulamaya geri dönünce: presence heartbeat'ini tazele (başkalarında
+  // en güncel süre/aktiflik hemen yansısın) ve bildirimi yenile (arka planda
+  // SW uyumuş olabilir).
   useEffect(() => {
     if (state.status !== 'running') return
     const onVisible = () => {

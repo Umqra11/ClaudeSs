@@ -7,6 +7,7 @@ import Profile from './pages/Profile'
 import Welcome from './pages/Welcome'
 import { useAuth } from './hooks/useAuth'
 import { useRooms } from './hooks/useRoom'
+import { useTimer } from './hooks/useTimer'
 import type { Room, UserProfile } from './services/db'
 
 export default function App() {
@@ -28,9 +29,14 @@ function Main({ user }: { user: UserProfile }) {
   const { rooms, refresh, setKnown } = useRooms(user.uid)
   const room = rooms?.[0] ?? null
 
+  // Kronometre motoru burada (uygulama ömrü boyunca TEK KEZ) kurulur; sekme
+  // değişince <Timer> sökülse bile seans sökülmez → süre sıfırlanmaz,
+  // heartbeat/checkpoint kesintisiz sürer.
+  const timer = useTimer(user)
+
   let content
   if (page === 'timer') {
-    content = <Timer user={user} />
+    content = <Timer user={user} timer={timer} />
   } else if (page === 'profile') {
     content = <Profile user={user} />
   } else if (rooms === null) {

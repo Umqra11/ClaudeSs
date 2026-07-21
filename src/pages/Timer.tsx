@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { isLocalMode, type UserProfile } from '../services/db'
-import { useTimer } from '../hooks/useTimer'
+import type { useTimer } from '../hooks/useTimer'
 import { useMilestone } from '../hooks/useMilestone'
 import {
   earnedMilestones,
@@ -11,6 +11,10 @@ import { formatClock, formatWeekTotal } from '../lib/format'
 
 interface TimerProps {
   user: UserProfile
+  /** Kronometre motoru App (Main) seviyesinde TEK KEZ kurulur ve sekme
+   *  değişiminde sökülmez (bkz. App.tsx) — böylece koşan seans sekme
+   *  değiştirince sıfırlanmaz ve heartbeat/checkpoint kesintisiz sürer. */
+  timer: ReturnType<typeof useTimer>
 }
 
 const STATE_LABELS: Record<string, string> = {
@@ -28,7 +32,7 @@ interface StopSummary {
   next: Milestone | null
 }
 
-export default function Timer({ user }: TimerProps) {
+export default function Timer({ user, timer }: TimerProps) {
   const {
     status,
     elapsedSec,
@@ -39,7 +43,7 @@ export default function Timer({ user }: TimerProps) {
     pause,
     resume,
     stop,
-  } = useTimer(user)
+  } = timer
   const milestone = useMilestone(user.uid, weekWithActiveSec)
   const [summary, setSummary] = useState<StopSummary | null>(null)
 

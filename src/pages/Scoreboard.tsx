@@ -3,6 +3,7 @@ import { useRoom } from '../hooks/useRoom'
 import { formatClock, formatLastSeen, formatTimeOfDay } from '../lib/format'
 import { getWeekId, previousWeekId, weekStartMs } from '../lib/week'
 import { weekTotalFromDays } from '../lib/stats'
+import { isLiveStudying } from '../lib/presence'
 import { db, REACTION_MAX_LEN, type UserProfile } from '../services/db'
 
 /** Bir üyenin verilen haftadaki toplam süresi — üyenin `days` (günlük
@@ -11,22 +12,6 @@ import { db, REACTION_MAX_LEN, type UserProfile } from '../services/db'
  *  değildir (o alanların çapraz-cihaz bozulması artık zararsız). */
 function completedWeekTotal(m: UserProfile, weekId: string): number {
   return weekTotalFromDays(m.days, weekId)
-}
-
-// Presence-TTL: bir üyeyi ancak heartbeat'i TAZE ise "çalışıyor" say. Uygulama
-// kapanınca/çevrimdışı olunca Firestore'da isStudying=true + eski
-// sessionStartedAt sonsuza dek takılı kalabiliyordu → başkaları hayalet bir
-// oturumu süresiz büyüyor görüyordu. Heartbeat 60sn yazıldığından 2,5dk birkaç
-// kaçan vuruşu tolere eder; bu süre sonrası üye "son görülme"ye düşer.
-const HEARTBEAT_STALE_MS = 150_000
-
-function isLiveStudying(m: UserProfile, now: number): boolean {
-  return (
-    m.isStudying &&
-    m.sessionStartedAt != null &&
-    m.lastHeartbeatAt != null &&
-    now - m.lastHeartbeatAt < HEARTBEAT_STALE_MS
-  )
 }
 
 interface ScoreboardProps {
@@ -66,7 +51,7 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
   // Kimse çalışmıyorken ve aktif tepki yokken tik gereksiz — boşa
   // render/pil harcamamak için koşullu kurulur.
   const anyLive =
-    members.some((m) => isLiveStudying(m, Date.now())) ||
+    members.some((m) => isLiveStudying(m)) ||
     reactions.some((r) => r.expireAt > Date.now())
   useEffect(() => {
     if (!anyLive) return
@@ -109,7 +94,7 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
       nowMs - weekStart < 24 * 3600_000 &&
       members.some(
         (m) =>
-          isLiveStudying(m, nowMs) &&
+          isLiveStudying(m) &&
           m.sessionStartedAt != null &&
           m.sessionStartedAt < weekStart &&
           weekStart - m.sessionStartedAt < 24 * 3600_000,
@@ -216,9 +201,9 @@ export default function Scoreboard({ user, roomId, onLeft }: ScoreboardProps) {
       // bayat weekTotalSec alanına bağımsız). Salı sıfırlaması otomatik:
       // yeni haftada henüz gün yoktur.
       const base = weekTotalFromDays(m.days, currentWeekId)
-      // Presence-TTL: yalnız heartbeat'i taze üye "canlı" sayılır (ghost
-      // oturumlar başkalarında sonsuza dek büyümesin).
-      const live = isLiveStudying(m, now)
+      // "Çalışıyor" seansın kendisine güvenir (heartbeat tazeliğine değil) —
+      // arka planda çalışan da canlı sayılır.
+      const live = isLiveStudying(m)
       // Koşan seans Salı 00:00 (hafta başı) sınırını kestiyse yalnızca
       // sınırdan SONRAKİ payı bu haftaya sayılır. Aksi halde gece
       // yarısında hâlâ çalışan biri, önceki haftanın akşam saatlerini de
